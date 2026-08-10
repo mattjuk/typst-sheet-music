@@ -2082,6 +2082,7 @@ fn compute_above_extent_sp(
             sp,
             fng_pos_default,
             font,
+            vertical_spacing,
         ) {
             item_top = item_top.max(chord_top);
         }
@@ -3815,6 +3816,7 @@ fn render_system(
                     adj_stem_ends.contains_key(&i),
                     font,
                     default_color,
+                    vertical_spacing,
                 );
 
                 // Staff markers
@@ -3871,6 +3873,7 @@ fn render_system(
                     false,
                     font,
                     default_color,
+                    vertical_spacing,
                 );
                 render_staff_markers(
                     cmds,
@@ -3942,6 +3945,7 @@ fn render_system(
                     adj_stem_ends.contains_key(&i),
                     font,
                     default_color,
+                    vertical_spacing,
                 );
                 render_staff_markers(
                     cmds,
@@ -5563,6 +5567,7 @@ fn chord_symbol_top_y(
     sp: f64,
     fng_pos_default: &str,
     font: glyph::FontId,
+    vertical_spacing: Option<&str>,
 ) -> Option<f64> {
     let ev = &items[idx].event;
     let cs = ev.chord_symbol()?;
@@ -5579,7 +5584,13 @@ fn chord_symbol_top_y(
         fng_pos_default,
         font,
     );
-    let mut base_y = (y_top + 2.5 * sp).max(low_top + 1.35 * sp);
+    let is_tight = vertical_spacing == Some("tight");
+    let (min_base, low_gap) = if is_tight {
+        (1.6 * sp, 0.55 * sp)
+    } else {
+        (2.5 * sp, 1.35 * sp)
+    };
+    let mut base_y = (y_top + min_base).max(low_top + low_gap);
     if let Some(trill_top) = active_trill_visual_top_y(
         items,
         idx,
@@ -5644,6 +5655,7 @@ fn staff_text_top_y(
         sp,
         fng_pos_default,
         font,
+        None,
     ) {
         base_y = base_y.max(chord_top + 0.95 * sp);
     }
@@ -5756,6 +5768,7 @@ fn ending_bracket_y_for_bounds(
                 sp,
                 fng_pos_default,
                 font,
+                _vertical_spacing,
             )
             .unwrap_or(octave_top);
             staff_text_top_y(
@@ -5905,6 +5918,7 @@ fn render_inline_text(
     is_beamed: bool,
     font: glyph::FontId,
     default_color: Option<&str>,
+    vertical_spacing: Option<&str>,
 ) {
     let fng_stack_step = fingering_stack_step(sp);
     let default_sp_numeric = 1.75; // default-staff-space in mm
@@ -6002,7 +6016,13 @@ fn render_inline_text(
     // Chord symbol — must clear the fingering stack with a visible gap.
     if let Some(cs) = ev.chord_symbol() {
         if !cs.is_empty() {
-            let mut chord_base_y = (y_top + 2.5 * sp).max(above_stack_top + 1.35 * sp);
+            let is_tight = vertical_spacing == Some("tight");
+            let (min_base, low_gap) = if is_tight {
+                (1.6 * sp, 0.55 * sp)
+            } else {
+                (2.5 * sp, 1.35 * sp)
+            };
+            let mut chord_base_y = (y_top + min_base).max(above_stack_top + low_gap);
             if let Some(trill_top) = active_trill_visual_top_y(
                 items,
                 idx,
