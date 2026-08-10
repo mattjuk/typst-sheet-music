@@ -428,11 +428,57 @@ fn needs_leading_accidental_space(event: &Event, next: &Event) -> bool {
     }
 }
 
+const UNBEAMED_FLAG_TAIL_CLEARANCE: f64 = 0.45;
+
+fn event_is_unbeamed_flagged_up_note(
+    event: &Event,
+    prev: Option<&Event>,
+    next: Option<&Event>,
+) -> bool {
+    let dur = event.duration();
+    if dur < 8 || event.grace() {
+        return false;
+    }
+    if let Some(n) = next {
+        if needs_leading_accidental_space(event, n) || flagged_note_before_longer_accidental(event, n) {
+            return false;
+        }
+    }
+    let (name, octave) = match event {
+        Event::Note(n) => (&n.name, n.octave),
+        Event::Chord(c) => {
+            if c.notes.is_empty() {
+                return false;
+            }
+            (&c.notes[0].name, c.notes[0].octave)
+        }
+        _ => return false,
+    };
+
+    let sp = pitch::staff_position(name, octave, "treble");
+    let stem_dir = pitch::auto_stem_direction(sp);
+    if stem_dir != "up" {
+        return false;
+    }
+
+    let prev_is_short = prev.map_or(false, |p| {
+        (p.is_note() || p.is_chord()) && !p.grace() && p.duration() >= 8
+    });
+    let next_is_short = next.map_or(false, |n| {
+        (n.is_note() || n.is_chord()) && !n.grace() && n.duration() >= 8
+    });
+
+    !prev_is_short && !next_is_short
+}
+
 fn plain_note_pair(event: &Event, next: Option<&Event>) -> bool {
     let next = match next {
         Some(n) => n,
         None => return false,
     };
+    if event_is_unbeamed_flagged_up_note(event, None, Some(next)) {
+        return false;
+    }
     event_is_note_cluster(event)
         && event_is_note_cluster(next)
         && !event.grace()
@@ -699,6 +745,9 @@ pub fn event_width_font(
             }
             if plain_note_pair(event, next) {
                 w *= PLAIN_NOTE_SPACING_MULTIPLIER;
+            }
+            if event_is_unbeamed_flagged_up_note(event, prev, next) {
+                w += UNBEAMED_FLAG_TAIL_CLEARANCE;
             }
             w = w.max(minimum_note_pair_spacing(event, next, font));
             w + leading_accidental_extra(event, w, next, font)
@@ -2028,6 +2077,16 @@ mod tests {
             * PLAIN_NOTE_SPACING_MULTIPLIER;
 
         assert_eq!(arpeggio_width, scalar_eighth_width);
+    }
+
+    #[test]
+    fn unbeamed_flagged_up_notes_leave_tail_clearance() {
+        let e_eighth = note("e", None, 8);
+        let g_quarter = note("g", None, 4);
+        let isolated_e_width = event_width(&e_eighth, None, Some(&g_quarter));
+        let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE * duration_spacing_factor(8.0, 0);
+
+        assert!(isolated_e_width > scalar_eighth_width);
     }
 
     #[test]
