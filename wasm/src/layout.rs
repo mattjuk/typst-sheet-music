@@ -1355,8 +1355,12 @@ pub fn layout_staff_font(
         });
     }
 
-    let tw = if !positions.is_empty() {
-        positions.last().unwrap().x + positions.last().unwrap().width
+    let tw = if let Some(last_item) = items.last() {
+        if last_item.event.is_barline() {
+            positions.last().unwrap().x
+        } else {
+            positions.last().unwrap().x + positions.last().unwrap().width
+        }
     } else {
         0.0
     };
@@ -1596,7 +1600,11 @@ pub fn align_staves_by_beat(laid_out_staves: &[LaidOutStaff]) -> Vec<LaidOutStaf
         col_xs.push(x);
         x += w;
     }
-    let total_w = x;
+    let total_w = if laid_out_staves.iter().all(|s| s.items.last().map_or(false, |it| it.event.is_barline())) {
+        col_xs.last().copied().unwrap_or(x)
+    } else {
+        x
+    };
 
     // 7. Reassign x to each item based on its column.
     let mut result = Vec::with_capacity(num_staves);
@@ -1666,6 +1674,7 @@ mod tests {
             fingering_position: "above".to_string(),
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
@@ -1689,6 +1698,7 @@ mod tests {
             dynamic: None,
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
@@ -1728,7 +1738,7 @@ mod tests {
     }
 
     fn gap(amount: i32) -> Event {
-        Event::Gap(Gap { amount })
+        Event::Gap(Gap::new(amount))
     }
 
     fn mark_tuplet(event: &mut Event, in_time_of: f64, number: i32, count: i32) {
@@ -1788,6 +1798,7 @@ mod tests {
             fingering_position: "above".to_string(),
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
