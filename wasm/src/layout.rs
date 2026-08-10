@@ -1666,6 +1666,7 @@ mod tests {
             fingering_position: "above".to_string(),
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
@@ -1689,6 +1690,7 @@ mod tests {
             dynamic: None,
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
@@ -1728,7 +1730,7 @@ mod tests {
     }
 
     fn gap(amount: i32) -> Event {
-        Event::Gap(Gap { amount })
+        Event::Gap(Gap::new(amount))
     }
 
     fn mark_tuplet(event: &mut Event, in_time_of: f64, number: i32, count: i32) {
@@ -1788,6 +1790,7 @@ mod tests {
             fingering_position: "above".to_string(),
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),

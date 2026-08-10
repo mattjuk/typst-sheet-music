@@ -8,6 +8,12 @@ pub const DURATION_BREVE: i32 = -2;
 
 // ─── Event types (mirrors model.typ) ───────────────────────────────────
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BowingMark {
+    pub kind: String,
+    pub position: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     pub name: String,
@@ -38,6 +44,8 @@ pub struct Note {
     pub fingering_position: String,
     pub chord_symbol: Option<String>,
     pub staff_markers: Vec<String>,
+    #[serde(default)]
+    pub bowing_marks: Vec<BowingMark>,
     pub staff_text: Option<String>,
     pub expression_text: Option<String>,
     pub lyrics: Vec<LyricEntry>,
@@ -92,6 +100,8 @@ pub struct ElementColors {
     pub lyrics: Option<String>,
     pub trill: Option<String>,
     pub staff_markers: Option<String>,
+    #[serde(default)]
+    pub bowing_marks: Option<String>,
     pub octave_line: Option<String>,
     pub noteheads: Vec<Option<String>>,
 }
@@ -112,6 +122,8 @@ pub struct Rest {
     pub dynamic: Option<String>,
     pub chord_symbol: Option<String>,
     pub staff_markers: Vec<String>,
+    #[serde(default)]
+    pub bowing_marks: Vec<BowingMark>,
     pub staff_text: Option<String>,
     pub expression_text: Option<String>,
     pub lyrics: Vec<LyricEntry>,
@@ -168,6 +180,8 @@ pub struct Chord {
     pub fingering_position: String,
     pub chord_symbol: Option<String>,
     pub staff_markers: Vec<String>,
+    #[serde(default)]
+    pub bowing_marks: Vec<BowingMark>,
     pub staff_text: Option<String>,
     pub expression_text: Option<String>,
     pub lyrics: Vec<LyricEntry>,
@@ -220,11 +234,34 @@ pub struct TimeSig {
 pub struct KeySig {
     pub key: String,
     pub mode: String,
+    #[serde(default)]
+    pub ending: Option<String>,
+    #[serde(default)]
+    pub ending_start: bool,
+    #[serde(default)]
+    pub ending_end: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Gap {
     pub amount: i32,
+    #[serde(default)]
+    pub ending: Option<String>,
+    #[serde(default)]
+    pub ending_start: bool,
+    #[serde(default)]
+    pub ending_end: bool,
+}
+
+impl Gap {
+    pub fn new(amount: i32) -> Self {
+        Self {
+            amount,
+            ending: None,
+            ending_start: false,
+            ending_end: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -513,6 +550,8 @@ impl Event {
             Event::Barline(b) => b.ending.as_deref(),
             Event::Clef(cl) => cl.ending.as_deref(),
             Event::TimeSig(t) => t.ending.as_deref(),
+            Event::KeySig(k) => k.ending.as_deref(),
+            Event::Gap(g) => g.ending.as_deref(),
             Event::Spacer(s) => s.ending.as_deref(),
             _ => None,
         }
@@ -525,6 +564,8 @@ impl Event {
             Event::Barline(b) => b.ending_start,
             Event::Clef(cl) => cl.ending_start,
             Event::TimeSig(t) => t.ending_start,
+            Event::KeySig(k) => k.ending_start,
+            Event::Gap(g) => g.ending_start,
             Event::Spacer(s) => s.ending_start,
             _ => false,
         }
@@ -537,6 +578,8 @@ impl Event {
             Event::Barline(b) => b.ending_end,
             Event::Clef(cl) => cl.ending_end,
             Event::TimeSig(t) => t.ending_end,
+            Event::KeySig(k) => k.ending_end,
+            Event::Gap(g) => g.ending_end,
             Event::Spacer(s) => s.ending_end,
             _ => false,
         }
@@ -624,6 +667,22 @@ impl Event {
             Event::Note(n) => n.colors.staff_markers.as_deref(),
             Event::Rest(r) => r.colors.staff_markers.as_deref(),
             Event::Chord(c) => c.colors.staff_markers.as_deref(),
+            _ => None,
+        }
+    }
+    pub fn bowing_marks(&self) -> &[BowingMark] {
+        match self {
+            Event::Note(n) => &n.bowing_marks,
+            Event::Rest(r) => &r.bowing_marks,
+            Event::Chord(c) => &c.bowing_marks,
+            _ => &[],
+        }
+    }
+    pub fn bowing_marks_color(&self) -> Option<&str> {
+        match self {
+            Event::Note(n) => n.colors.bowing_marks.as_deref(),
+            Event::Rest(r) => r.colors.bowing_marks.as_deref(),
+            Event::Chord(c) => c.colors.bowing_marks.as_deref(),
             _ => None,
         }
     }
@@ -717,6 +776,7 @@ impl Note {
             fingering_position: "above".to_string(),
             chord_symbol: None,
             staff_markers: vec![],
+            bowing_marks: vec![],
             staff_text: None,
             expression_text: None,
             lyrics: vec![],
@@ -742,6 +802,7 @@ impl Rest {
             dynamic: None,
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
@@ -807,6 +868,7 @@ pub struct ScoreInput {
     pub note_colors: Option<BTreeMap<String, String>>,
     #[serde(default = "default_tuplet_style")]
     pub tuplet_style: String,
+    pub vertical_spacing: Option<String>,
 }
 
 fn default_tuplet_style() -> String {

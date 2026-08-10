@@ -801,7 +801,18 @@ fn smufl_name_for_codepoint(codepoint: u32) -> Option<&'static str> {
         0xE4CE => Some("breathMarkComma"),
         0xE4D1 => Some("caesura"),
         0xE047 => Some("segno"),
-        0xE048 => Some("coda"),
+        0xE610 => Some("stringDownBow"),
+        0xE611 => Some("stringDownBowTurned"),
+        0xE612 => Some("stringUpBow"),
+        0xE613 => Some("stringUpBowTurned"),
+        0xE614 => Some("stringHarmonic"),
+        0xE617 => Some("stringBowBehindBridge"),
+        0xE618 => Some("stringBowOnBridge"),
+        0xE619 => Some("stringBowOnTailpiece"),
+        0xE630 => Some("snapPizzicato"),
+        0xE632 => Some("leftHandPizzicato"),
+        0xEB60 => Some("arrowUp"),
+        0xEB64 => Some("arrowDown"),
         0xE000 => Some("brace"),
         0xE002 => Some("bracket"),
         0xE003 => Some("bracketTop"),
@@ -834,6 +845,18 @@ fn smufl_bbox_for_codepoint(codepoint: u32, font: glyph::FontId) -> Option<glyph
         0xE4AD => Some(bbox(-0.004, -1.016, 0.94, 0.0)),    // articMarcatoBelow
         0xE4C0 => Some(bbox(0.012, -0.012, 2.42, 1.316)),   // fermataAbove
         0xE4C1 => Some(bbox(0.012, -1.328, 2.42, 0.0)),     // fermataBelow
+        0xE610 => Some(bbox(0.0, 0.0, 1.08, 0.936)),       // stringDownBow
+        0xE611 => Some(bbox(0.0, -0.936, 1.08, 0.0)),      // stringDownBowTurned
+        0xE612 => Some(bbox(0.0, 0.0, 1.056, 1.18)),       // stringUpBow
+        0xE613 => Some(bbox(0.0, -1.18, 1.056, 0.0)),      // stringUpBowTurned
+        0xE614 => Some(bbox(0.0, 0.0, 0.816, 0.816)),      // stringHarmonic
+        0xE617 => Some(bbox(0.0, 0.0, 1.2, 1.2)),          // stringBowBehindBridge
+        0xE618 => Some(bbox(0.0, 0.0, 1.2, 1.2)),          // stringBowOnBridge
+        0xE619 => Some(bbox(0.0, 0.0, 1.2, 1.2)),          // stringBowOnTailpiece
+        0xE630 => Some(bbox(0.0, 0.0, 0.816, 1.4)),        // snapPizzicato
+        0xE632 => Some(bbox(0.0, 0.0, 0.8, 0.8)),          // leftHandPizzicato
+        0xEB60 => Some(bbox(0.0, 0.0, 0.8, 1.0)),          // arrowUp
+        0xEB64 => Some(bbox(0.0, 0.0, 0.8, 1.0)),          // arrowDown (center-aligned)
         _ => None,
     }
 }
@@ -858,6 +881,13 @@ fn smufl_advance_for_codepoint(codepoint: u32, font: glyph::FontId) -> Option<f6
         0xE4A4 | 0xE4A5 => Some(1.352),
         0xE4AC | 0xE4AD => Some(0.944),
         0xE4C0 | 0xE4C1 => Some(2.42),
+        0xE610 | 0xE611 => Some(1.08),
+        0xE612 | 0xE613 => Some(1.056),
+        0xE614 => Some(0.816),
+        0xE617 | 0xE618 | 0xE619 => Some(1.2),
+        0xE630 => Some(0.816),
+        0xE632 => Some(0.8),
+        0xEB60 | 0xEB64 => Some(0.8),
         _ => None,
     }
 }
@@ -917,6 +947,7 @@ fn svg_from_cmds(
     width_mm: f64,
     fallback_height_mm: f64,
     music_font: &str,
+    vertical_spacing: Option<&str>,
 ) -> String {
     let mut bounds = (0.0, -fallback_height_mm, width_mm, 0.0);
     let mut ox = 0.0;
@@ -1009,13 +1040,18 @@ fn svg_from_cmds(
     }
 
     let margin = 1.5;
+    let (top_margin, bottom_margin) = if vertical_spacing == Some("tight") {
+        (0.5, 0.5)
+    } else {
+        (margin, margin)
+    };
     // Keep the horizontal viewport stable across systems. Content-aware left/right
     // bounds make systems with labels or brackets extending slightly farther left
     // get translated by a different amount, which visually shifts staff lines.
     let min_x = -margin;
     let max_x = width_mm + margin;
-    let min_y = bounds.1 - margin;
-    let max_y = bounds.3 + margin;
+    let min_y = bounds.1 - bottom_margin;
+    let max_y = bounds.3 + top_margin;
     let vb_w = (max_x - min_x).max(1.0);
     let vb_h = (max_y - min_y).max(1.0);
 
@@ -1984,8 +2020,9 @@ fn compute_above_extent_sp(
     items: &[LaidOutItem],
     fng_pos_default: &str,
     font: glyph::FontId,
+    vertical_spacing: Option<&str>,
 ) -> f64 {
-    let mut max_sp = 0.0_f64;
+    let mut max_sp: f64 = 0.0;
     let adj_stem_ends = std::collections::HashMap::new();
     let adj_stem_dirs = std::collections::HashMap::new();
 
@@ -1995,6 +2032,7 @@ fn compute_above_extent_sp(
                 &item.voice_items,
                 fng_pos_default,
                 font,
+                vertical_spacing,
             ));
         }
         let ev = &item.event;
@@ -2071,6 +2109,7 @@ fn compute_above_extent_sp(
                     sp,
                     fng_pos_default,
                     font,
+                    vertical_spacing,
                 ));
             }
         }
@@ -2104,6 +2143,7 @@ pub fn render_system_group(
     staff_colors: &[Option<&str>],
     music_font: &str,
     tuplet_style: &str,
+    vertical_spacing: Option<&str>,
 ) -> SystemOutput {
     let font = glyph::FontId::from_name(music_font);
     let ed = glyph::engraving_defaults(font);
@@ -2233,7 +2273,7 @@ pub fn render_system_group(
             // Expand the gap if below-staff content of the upper staff or above-staff content
             // of the lower staff needs more room than the configured default spacing.
             let below_sp = compute_below_extent_sp(&laid_out_staves[si - 1].items);
-            let above_sp = compute_above_extent_sp(&laid_out.items, fng_pos, font);
+            let above_sp = compute_above_extent_sp(&laid_out.items, fng_pos, font, vertical_spacing);
             let required_mm = (below_sp + above_sp + 0.5) * sp_unit;
             let spacing = staff_spacing_mm.max(required_mm);
             y_offset -= spacing;
@@ -2286,6 +2326,7 @@ pub fn render_system_group(
             instrument_indent,
             staff_default_color,
             tuplet_style,
+            vertical_spacing,
         );
 
         y_offset -= staff_height_mm;
@@ -2483,7 +2524,7 @@ pub fn render_system_group(
     // Add below-staff content depth
     total_height += 1.75 * sp_unit; // baseline below depth
 
-    let svg = svg_from_cmds(&cmds, width_mm, total_height, music_font);
+    let svg = svg_from_cmds(&cmds, width_mm, total_height, music_font, vertical_spacing);
 
     SystemOutput {
         width: width_mm,
@@ -2796,6 +2837,7 @@ fn render_system(
     instrument_indent_sp: f64,
     default_color: Option<&str>,
     tuplet_style: &str,
+    vertical_spacing: Option<&str>,
 ) {
     let clef_name = laid_out.clef.as_deref();
     let opening_time = laid_out.time.as_ref().or(time.as_ref());
@@ -3791,6 +3833,20 @@ fn render_system(
                         default_color,
                     ),
                 );
+
+                render_bowing_marks(
+                    cmds,
+                    x,
+                    &n.bowing_marks,
+                    y_top,
+                    above_anchor,
+                    sp,
+                    resolved_color(
+                        n.colors.bowing_marks.as_deref(),
+                        n.colors.overall.as_deref(),
+                        default_color,
+                    ),
+                );
             }
             Event::Rest(r) => {
                 let above_anchor = y_top + 0.5 * sp;
@@ -3827,6 +3883,20 @@ fn render_system(
                     font,
                     resolved_color(
                         r.colors.staff_markers.as_deref(),
+                        r.colors.overall.as_deref(),
+                        default_color,
+                    ),
+                );
+
+                render_bowing_marks(
+                    cmds,
+                    x,
+                    &r.bowing_marks,
+                    y_top,
+                    above_anchor,
+                    sp,
+                    resolved_color(
+                        r.colors.bowing_marks.as_deref(),
                         r.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -3884,6 +3954,20 @@ fn render_system(
                     font,
                     resolved_color(
                         c.colors.staff_markers.as_deref(),
+                        c.colors.overall.as_deref(),
+                        default_color,
+                    ),
+                );
+
+                render_bowing_marks(
+                    cmds,
+                    x,
+                    &c.bowing_marks,
+                    y_top,
+                    above_anchor,
+                    sp,
+                    resolved_color(
+                        c.colors.bowing_marks.as_deref(),
                         c.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -4036,6 +4120,7 @@ fn render_system(
         total_width,
         fng_pos,
         font,
+        vertical_spacing,
     );
 
     // ── Lyrics ──
@@ -4939,14 +5024,14 @@ mod beam_tests {
         let items = vec![
             laid_out_item(eighth_note("c")),
             laid_out_item(eighth_note("d")),
-            laid_out_item(Event::Gap(Gap { amount: 1 })),
+            laid_out_item(Event::Gap(Gap::new(1))),
             laid_out_item(eighth_note("e")),
             laid_out_item(eighth_note("f")),
-            laid_out_item(Event::Gap(Gap { amount: 1 })),
+            laid_out_item(Event::Gap(Gap::new(1))),
             laid_out_item(eighth_note("g")),
-            laid_out_item(Event::Gap(Gap { amount: 1 })),
+            laid_out_item(Event::Gap(Gap::new(1))),
             laid_out_item(eighth_note("a")),
-            laid_out_item(Event::Gap(Gap { amount: 1 })),
+            laid_out_item(Event::Gap(Gap::new(1))),
             laid_out_item(eighth_note("b")),
             laid_out_item(eighth_note("c")),
         ];
@@ -5626,15 +5711,8 @@ fn ending_bracket_y_for_bounds(
     sp: f64,
     fng_pos_default: &str,
     font: glyph::FontId,
+    _vertical_spacing: Option<&str>,
 ) -> f64 {
-    let label_text = items[start].event.ending().unwrap_or("");
-    let starts_here = items[start].event.ending_start();
-    let ending_label_size = ending_label_size_pt(sp);
-    let label_height = if starts_here && !label_text.is_empty() {
-        text_height_mm(ending_label_size)
-    } else {
-        0.0
-    };
     let content_top = (start..=end)
         .map(|idx| {
             let base_top = above_item_content_top(
@@ -5694,8 +5772,7 @@ fn ending_bracket_y_for_bounds(
         })
         .fold(y_top, f64::max);
     let line_clearance = 0.75 * sp;
-    let label_clearance = label_height + 0.45 * sp;
-    (y_top + 3.5 * sp).max(content_top + line_clearance.max(label_clearance))
+    (y_top + 3.5 * sp).max(content_top + line_clearance)
 }
 
 fn fingering_respects_below_default(ev: &Event, fng_pos_default: &str) -> bool {
@@ -6110,6 +6187,106 @@ fn render_staff_markers(
         if let Some(cp) = staff_marker_codepoint(mk) {
             emit_glyph_colored(cmds, x, cur_y, mk, cp, sp, font, color);
             cur_y += 1.7 * sp + 0.2 * sp;
+        }
+    }
+}
+
+fn bowing_mark_codepoint(kind: &str) -> Option<u32> {
+    match kind {
+        "down" | "downbow" => Some(0xE610),
+        "down-turned" | "downbow-turned" => Some(0xE611),
+        "up" | "upbow" => Some(0xE612),
+        "up-turned" | "upbow-turned" => Some(0xE613),
+        "harmonic" | "open" => Some(0xE614),
+        "behind-bridge" => Some(0xE617),
+        "on-bridge" => Some(0xE618),
+        "on-tailpiece" => Some(0xE619),
+        "snap" | "snap-pizz" => Some(0xE630),
+        "left-hand-pizz" | "pizz" | "+" => Some(0xE632),
+        "up-arrow" | "uparrow" | "arrow-up" => Some(0xEB60),
+        "down-arrow" | "downarrow" | "arrow-down" => Some(0xEB64),
+        _ => None,
+    }
+}
+
+fn render_bowing_marks(
+    cmds: &mut Vec<DrawCmd>,
+    x: f64,
+    bowing_marks: &[BowingMark],
+    y_top: f64,
+    above_anchor: f64,
+    sp: f64,
+    color: Option<&str>,
+) {
+    if bowing_marks.is_empty() {
+        return;
+    }
+
+    let mut cur_y = (y_top + 1.2 * sp).max(above_anchor + 0.25 * sp);
+    for mark in bowing_marks {
+        match mark.kind.as_str() {
+            "up-arrow" | "uparrow" | "arrow-up" => {
+                let w = 0.13 * sp;
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y,
+                    x2: x,
+                    y2: cur_y + 1.2 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y + 1.2 * sp,
+                    x2: x - 0.3 * sp,
+                    y2: cur_y + 0.8 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y + 1.2 * sp,
+                    x2: x + 0.3 * sp,
+                    y2: cur_y + 0.8 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cur_y += 1.4 * sp;
+            }
+            "down-arrow" | "downarrow" | "arrow-down" => {
+                let w = 0.13 * sp;
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y + 1.2 * sp,
+                    x2: x,
+                    y2: cur_y,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y,
+                    x2: x - 0.3 * sp,
+                    y2: cur_y + 0.4 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y,
+                    x2: x + 0.3 * sp,
+                    y2: cur_y + 0.4 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cur_y += 1.4 * sp;
+            }
+            _ => {
+                if let Some(cp) = bowing_mark_codepoint(&mark.kind) {
+                    emit_glyph_anchored_colored(cmds, x, cur_y, cp, sp, "south", color);
+                    cur_y += 1.4 * sp;
+                }
+            }
         }
     }
 }
@@ -7205,6 +7382,7 @@ fn render_endings(
     total_width: f64,
     fng_pos_default: &str,
     font: glyph::FontId,
+    vertical_spacing: Option<&str>,
 ) {
     struct EndingGroup {
         indices: Vec<usize>,
@@ -7219,32 +7397,32 @@ fn render_endings(
     for (i, item) in items.iter().enumerate() {
         let ending = item.event.ending().map(|s| s.to_string());
         if let Some(ref lbl) = ending {
-            if cur_indices.is_empty() || cur_label.as_deref() == Some(lbl) {
+            if cur_label.as_ref() == Some(lbl) {
                 cur_indices.push(i);
-                cur_label = Some(lbl.clone());
             } else {
-                let first = cur_indices[0];
-                let last = *cur_indices.last().unwrap();
-                groups.push(EndingGroup {
-                    indices: cur_indices.clone(),
-                    label: cur_label.unwrap(),
-                    starts_here: items[first].event.ending_start(),
-                    ends_here: items[last].event.ending_end(),
-                });
-                cur_indices = vec![i];
+                if !cur_indices.is_empty() {
+                    let first = cur_indices[0];
+                    let last = *cur_indices.last().unwrap();
+                    groups.push(EndingGroup {
+                        indices: cur_indices.clone(),
+                        label: cur_label.take().unwrap_or_default(),
+                        starts_here: items[first].event.ending_start(),
+                        ends_here: items[last].event.ending_end(),
+                    });
+                }
                 cur_label = Some(lbl.clone());
+                cur_indices = vec![i];
             }
             if item.event.ending_end() && !cur_indices.is_empty() {
                 let first = cur_indices[0];
                 let last = *cur_indices.last().unwrap();
                 groups.push(EndingGroup {
                     indices: cur_indices.clone(),
-                    label: cur_label.unwrap(),
+                    label: cur_label.take().unwrap_or_default(),
                     starts_here: items[first].event.ending_start(),
                     ends_here: items[last].event.ending_end(),
                 });
-                cur_indices = Vec::new();
-                cur_label = None;
+                cur_indices.clear();
             }
         } else if !cur_indices.is_empty() {
             let first = cur_indices[0];
@@ -7341,12 +7519,14 @@ fn render_endings(
             sp,
             fng_pos_default,
             font,
+            vertical_spacing,
         );
         let hook_depth = ending_hook_depth_mm(sp);
 
         emit_line(cmds, x0, bracket_y, x1, bracket_y, line_w);
         if eg.starts_here {
-            emit_line(cmds, x0, bracket_y, x0, bracket_y - hook_depth, line_w);
+            let left_bottom_y = (y_top + 1.0).min(bracket_y - hook_depth);
+            emit_line(cmds, x0, bracket_y, x0, left_bottom_y, line_w);
         }
         if eg.ends_here {
             emit_line(cmds, x1, bracket_y, x1, bracket_y - hook_depth, line_w);
@@ -7421,6 +7601,7 @@ mod ending_bracket_tests {
             20.0,
             "above",
             glyph::FontId::Bravura,
+            None,
         );
 
         assert!(vertical_depths(&cmds).is_empty());
@@ -7451,14 +7632,15 @@ mod ending_bracket_tests {
             20.0,
             "above",
             glyph::FontId::Bravura,
+            None,
         );
 
         let hook_depths = vertical_depths(&cmds);
         assert_eq!(hook_depths.len(), 2);
-        for depth in hook_depths {
-            assert!((depth - expected).abs() < 1e-9);
-            assert!(depth > 0.65 * sp * 2.0);
-        }
+        let left_depth = hook_depths[0];
+        let right_depth = hook_depths[1];
+        assert!(left_depth > expected);
+        assert!((right_depth - expected).abs() < 1e-9);
     }
 }
 
@@ -7743,4 +7925,23 @@ fn render_lyrics(
             }
         }
     }
+}
+
+#[test]
+fn test_check_leland_glyph_indices() {
+    let font_bytes = include_bytes!("../../fonts/Leland.otf");
+    let face = ttf_parser::Face::parse(font_bytes, 0).unwrap();
+
+    let check = |cp: u32, name: &str| {
+        let ch = char::from_u32(cp).unwrap();
+        let gid = face.glyph_index(ch);
+        println!("Codepoint 0x{:X} ({}): {:?}", cp, name, gid);
+    };
+
+    check(0xE050, "gClef");
+    check(0xE0A4, "noteheadBlack");
+    check(0xE610, "stringDownBow");
+    check(0xE612, "stringUpBow");
+    check(0xEB60, "arrowUp");
+    check(0xEB64, "arrowDown");
 }
