@@ -170,6 +170,7 @@ Examples of accepted inputs:
   - Staff text above: `text[Solo]`
   - Expression text below: `exp[dolce]`
   - Fingerings: `n[3]`, `n_[2]`, `n[1 *3* 5]`
+  - Bowing marks (above / below): `bow[down]`, `bow[up]`, `bow_[down]`, `bow_[up-arrow]`, `bow[down-arrow]`, `bow[harmonic snap]`, `bow[+]`, `bow[pizz]`
   - Chord symbols: `[C]`, `[Am7]`, `[D/F#]`
   - Staff markers: `bm` (breath mark), `//` (caesura), `ds`, `coda`
 

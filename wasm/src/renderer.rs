@@ -801,7 +801,18 @@ fn smufl_name_for_codepoint(codepoint: u32) -> Option<&'static str> {
         0xE4CE => Some("breathMarkComma"),
         0xE4D1 => Some("caesura"),
         0xE047 => Some("segno"),
-        0xE048 => Some("coda"),
+        0xE610 => Some("stringDownBow"),
+        0xE611 => Some("stringDownBowTurned"),
+        0xE612 => Some("stringUpBow"),
+        0xE613 => Some("stringUpBowTurned"),
+        0xE614 => Some("stringHarmonic"),
+        0xE617 => Some("stringBowBehindBridge"),
+        0xE618 => Some("stringBowOnBridge"),
+        0xE619 => Some("stringBowOnTailpiece"),
+        0xE630 => Some("snapPizzicato"),
+        0xE632 => Some("leftHandPizzicato"),
+        0xEB60 => Some("arrowUp"),
+        0xEB64 => Some("arrowDown"),
         0xE000 => Some("brace"),
         0xE002 => Some("bracket"),
         0xE003 => Some("bracketTop"),
@@ -834,6 +845,18 @@ fn smufl_bbox_for_codepoint(codepoint: u32, font: glyph::FontId) -> Option<glyph
         0xE4AD => Some(bbox(-0.004, -1.016, 0.94, 0.0)),    // articMarcatoBelow
         0xE4C0 => Some(bbox(0.012, -0.012, 2.42, 1.316)),   // fermataAbove
         0xE4C1 => Some(bbox(0.012, -1.328, 2.42, 0.0)),     // fermataBelow
+        0xE610 => Some(bbox(0.0, 0.0, 1.08, 0.936)),       // stringDownBow
+        0xE611 => Some(bbox(0.0, -0.936, 1.08, 0.0)),      // stringDownBowTurned
+        0xE612 => Some(bbox(0.0, 0.0, 1.056, 1.18)),       // stringUpBow
+        0xE613 => Some(bbox(0.0, -1.18, 1.056, 0.0)),      // stringUpBowTurned
+        0xE614 => Some(bbox(0.0, 0.0, 0.816, 0.816)),      // stringHarmonic
+        0xE617 => Some(bbox(0.0, 0.0, 1.2, 1.2)),          // stringBowBehindBridge
+        0xE618 => Some(bbox(0.0, 0.0, 1.2, 1.2)),          // stringBowOnBridge
+        0xE619 => Some(bbox(0.0, 0.0, 1.2, 1.2)),          // stringBowOnTailpiece
+        0xE630 => Some(bbox(0.0, 0.0, 0.816, 1.4)),        // snapPizzicato
+        0xE632 => Some(bbox(0.0, 0.0, 0.8, 0.8)),          // leftHandPizzicato
+        0xEB60 => Some(bbox(0.0, 0.0, 0.8, 1.0)),          // arrowUp
+        0xEB64 => Some(bbox(0.0, 0.0, 0.8, 1.0)),          // arrowDown (center-aligned)
         _ => None,
     }
 }
@@ -858,6 +881,13 @@ fn smufl_advance_for_codepoint(codepoint: u32, font: glyph::FontId) -> Option<f6
         0xE4A4 | 0xE4A5 => Some(1.352),
         0xE4AC | 0xE4AD => Some(0.944),
         0xE4C0 | 0xE4C1 => Some(2.42),
+        0xE610 | 0xE611 => Some(1.08),
+        0xE612 | 0xE613 => Some(1.056),
+        0xE614 => Some(0.816),
+        0xE617 | 0xE618 | 0xE619 => Some(1.2),
+        0xE630 => Some(0.816),
+        0xE632 => Some(0.8),
+        0xEB60 | 0xEB64 => Some(0.8),
         _ => None,
     }
 }
@@ -3805,6 +3835,20 @@ fn render_system(
                         default_color,
                     ),
                 );
+
+                render_bowing_marks(
+                    cmds,
+                    x,
+                    &n.bowing_marks,
+                    y_top,
+                    above_anchor,
+                    sp,
+                    resolved_color(
+                        n.colors.bowing_marks.as_deref(),
+                        n.colors.overall.as_deref(),
+                        default_color,
+                    ),
+                );
             }
             Event::Rest(r) => {
                 let above_anchor = y_top + 0.5 * sp;
@@ -3842,6 +3886,20 @@ fn render_system(
                     font,
                     resolved_color(
                         r.colors.staff_markers.as_deref(),
+                        r.colors.overall.as_deref(),
+                        default_color,
+                    ),
+                );
+
+                render_bowing_marks(
+                    cmds,
+                    x,
+                    &r.bowing_marks,
+                    y_top,
+                    above_anchor,
+                    sp,
+                    resolved_color(
+                        r.colors.bowing_marks.as_deref(),
                         r.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -3900,6 +3958,20 @@ fn render_system(
                     font,
                     resolved_color(
                         c.colors.staff_markers.as_deref(),
+                        c.colors.overall.as_deref(),
+                        default_color,
+                    ),
+                );
+
+                render_bowing_marks(
+                    cmds,
+                    x,
+                    &c.bowing_marks,
+                    y_top,
+                    above_anchor,
+                    sp,
+                    resolved_color(
+                        c.colors.bowing_marks.as_deref(),
                         c.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -6139,6 +6211,106 @@ fn render_staff_markers(
     }
 }
 
+fn bowing_mark_codepoint(kind: &str) -> Option<u32> {
+    match kind {
+        "down" | "downbow" => Some(0xE610),
+        "down-turned" | "downbow-turned" => Some(0xE611),
+        "up" | "upbow" => Some(0xE612),
+        "up-turned" | "upbow-turned" => Some(0xE613),
+        "harmonic" | "open" => Some(0xE614),
+        "behind-bridge" => Some(0xE617),
+        "on-bridge" => Some(0xE618),
+        "on-tailpiece" => Some(0xE619),
+        "snap" | "snap-pizz" => Some(0xE630),
+        "left-hand-pizz" | "pizz" | "+" => Some(0xE632),
+        "up-arrow" | "uparrow" | "arrow-up" => Some(0xEB60),
+        "down-arrow" | "downarrow" | "arrow-down" => Some(0xEB64),
+        _ => None,
+    }
+}
+
+fn render_bowing_marks(
+    cmds: &mut Vec<DrawCmd>,
+    x: f64,
+    bowing_marks: &[BowingMark],
+    y_top: f64,
+    above_anchor: f64,
+    sp: f64,
+    color: Option<&str>,
+) {
+    if bowing_marks.is_empty() {
+        return;
+    }
+
+    let mut cur_y = (y_top + 1.2 * sp).max(above_anchor + 0.25 * sp);
+    for mark in bowing_marks {
+        match mark.kind.as_str() {
+            "up-arrow" | "uparrow" | "arrow-up" => {
+                let w = 0.13 * sp;
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y,
+                    x2: x,
+                    y2: cur_y + 1.2 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y + 1.2 * sp,
+                    x2: x - 0.3 * sp,
+                    y2: cur_y + 0.8 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y + 1.2 * sp,
+                    x2: x + 0.3 * sp,
+                    y2: cur_y + 0.8 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cur_y += 1.4 * sp;
+            }
+            "down-arrow" | "downarrow" | "arrow-down" => {
+                let w = 0.13 * sp;
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y + 1.2 * sp,
+                    x2: x,
+                    y2: cur_y,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y,
+                    x2: x - 0.3 * sp,
+                    y2: cur_y + 0.4 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cmds.push(DrawCmd::Line {
+                    x1: x,
+                    y1: cur_y,
+                    x2: x + 0.3 * sp,
+                    y2: cur_y + 0.4 * sp,
+                    w,
+                    color: color_owned(color),
+                });
+                cur_y += 1.4 * sp;
+            }
+            _ => {
+                if let Some(cp) = bowing_mark_codepoint(&mark.kind) {
+                    emit_glyph_anchored_colored(cmds, x, cur_y, cp, sp, "south", color);
+                    cur_y += 1.4 * sp;
+                }
+            }
+        }
+    }
+}
+
 fn render_tuplets(
     cmds: &mut Vec<DrawCmd>,
     items: &[LaidOutItem],
@@ -7773,4 +7945,23 @@ fn render_lyrics(
             }
         }
     }
+}
+
+#[test]
+fn test_check_leland_glyph_indices() {
+    let font_bytes = include_bytes!("../../fonts/Leland.otf");
+    let face = ttf_parser::Face::parse(font_bytes, 0).unwrap();
+
+    let check = |cp: u32, name: &str| {
+        let ch = char::from_u32(cp).unwrap();
+        let gid = face.glyph_index(ch);
+        println!("Codepoint 0x{:X} ({}): {:?}", cp, name, gid);
+    };
+
+    check(0xE050, "gClef");
+    check(0xE0A4, "noteheadBlack");
+    check(0xE610, "stringDownBow");
+    check(0xE612, "stringUpBow");
+    check(0xEB60, "arrowUp");
+    check(0xEB64, "arrowDown");
 }

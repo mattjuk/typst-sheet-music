@@ -8,6 +8,12 @@ pub const DURATION_BREVE: i32 = -2;
 
 // ─── Event types (mirrors model.typ) ───────────────────────────────────
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BowingMark {
+    pub kind: String,
+    pub position: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     pub name: String,
@@ -38,6 +44,8 @@ pub struct Note {
     pub fingering_position: String,
     pub chord_symbol: Option<String>,
     pub staff_markers: Vec<String>,
+    #[serde(default)]
+    pub bowing_marks: Vec<BowingMark>,
     pub staff_text: Option<String>,
     pub expression_text: Option<String>,
     pub lyrics: Vec<LyricEntry>,
@@ -92,6 +100,8 @@ pub struct ElementColors {
     pub lyrics: Option<String>,
     pub trill: Option<String>,
     pub staff_markers: Option<String>,
+    #[serde(default)]
+    pub bowing_marks: Option<String>,
     pub octave_line: Option<String>,
     pub noteheads: Vec<Option<String>>,
 }
@@ -112,6 +122,8 @@ pub struct Rest {
     pub dynamic: Option<String>,
     pub chord_symbol: Option<String>,
     pub staff_markers: Vec<String>,
+    #[serde(default)]
+    pub bowing_marks: Vec<BowingMark>,
     pub staff_text: Option<String>,
     pub expression_text: Option<String>,
     pub lyrics: Vec<LyricEntry>,
@@ -168,6 +180,8 @@ pub struct Chord {
     pub fingering_position: String,
     pub chord_symbol: Option<String>,
     pub staff_markers: Vec<String>,
+    #[serde(default)]
+    pub bowing_marks: Vec<BowingMark>,
     pub staff_text: Option<String>,
     pub expression_text: Option<String>,
     pub lyrics: Vec<LyricEntry>,
@@ -656,6 +670,22 @@ impl Event {
             _ => None,
         }
     }
+    pub fn bowing_marks(&self) -> &[BowingMark] {
+        match self {
+            Event::Note(n) => &n.bowing_marks,
+            Event::Rest(r) => &r.bowing_marks,
+            Event::Chord(c) => &c.bowing_marks,
+            _ => &[],
+        }
+    }
+    pub fn bowing_marks_color(&self) -> Option<&str> {
+        match self {
+            Event::Note(n) => n.colors.bowing_marks.as_deref(),
+            Event::Rest(r) => r.colors.bowing_marks.as_deref(),
+            Event::Chord(c) => c.colors.bowing_marks.as_deref(),
+            _ => None,
+        }
+    }
     pub fn staff_text(&self) -> Option<&str> {
         match self {
             Event::Note(n) => n.staff_text.as_deref(),
@@ -746,6 +776,7 @@ impl Note {
             fingering_position: "above".to_string(),
             chord_symbol: None,
             staff_markers: vec![],
+            bowing_marks: vec![],
             staff_text: None,
             expression_text: None,
             lyrics: vec![],
@@ -771,6 +802,7 @@ impl Rest {
             dynamic: None,
             chord_symbol: None,
             staff_markers: Vec::new(),
+            bowing_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             lyrics: Vec::new(),
