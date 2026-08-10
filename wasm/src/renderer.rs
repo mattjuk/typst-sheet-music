@@ -5558,6 +5558,134 @@ fn active_above_octave_line_y(
     ))
 }
 
+fn compute_item_above_stack_top(
+    items: &[LaidOutItem],
+    idx: usize,
+    adj_stem_ends: &std::collections::HashMap<usize, f64>,
+    adj_stem_dirs: &std::collections::HashMap<usize, String>,
+    y_top: f64,
+    sp: f64,
+    fng_pos_default: &str,
+    font: glyph::FontId,
+) -> f64 {
+    let item = &items[idx];
+    let ev = &item.event;
+
+    // 1. Base notehead, stem top, and above articulations/fingering
+    let note_top = above_item_content_top(
+        item,
+        idx,
+        adj_stem_ends,
+        adj_stem_dirs,
+        y_top,
+        sp,
+        fng_pos_default,
+        font,
+    );
+    let mut top = note_top;
+
+    // 2. Bowing marks above staff
+    let bowing_marks = match ev {
+        Event::Note(n) => &n.bowing_marks,
+        Event::Rest(r) => &r.bowing_marks,
+        Event::Chord(c) => &c.bowing_marks,
+        _ => &[][..],
+    };
+    if !bowing_marks.is_empty() {
+        let bow_base = (y_top + 1.2 * sp).max(note_top + 0.25 * sp);
+        top = top.max(bow_base + 1.25 * sp);
+    }
+
+    // 3. Staff markers above staff (fermatas, trill glyphs, etc.)
+    let staff_markers = match ev {
+        Event::Note(n) => &n.staff_markers,
+        Event::Rest(r) => &r.staff_markers,
+        Event::Chord(c) => &c.staff_markers,
+        _ => &[][..],
+    };
+    let has_trill = match ev {
+        Event::Note(n) => n.trill,
+        Event::Rest(r) => r.trill,
+        Event::Chord(c) => c.trill,
+        _ => false,
+    };
+    let centered_markers = staff_markers
+        .iter()
+        .filter(|m| m.as_str() != "breath-mark" && m.as_str() != "caesura")
+        .count();
+    if centered_markers > 0 || has_trill {
+        let mark_base = (y_top + 1.9 * sp).max(note_top + 0.3 * sp);
+        top = top.max(mark_base + centered_markers.max(1) as f64 * 1.9 * sp);
+    }
+
+    // 4. Active trill lines and octave lines
+    if let Some(trill_top) = active_trill_visual_top_y(
+        items,
+        idx,
+        adj_stem_ends,
+        adj_stem_dirs,
+        y_top,
+        sp,
+        fng_pos_default,
+        font,
+    ) {
+        top = top.max(trill_top + 1.15 * sp);
+    }
+    if let Some(octave_y) = active_above_octave_line_y(
+        items,
+        idx,
+        adj_stem_ends,
+        adj_stem_dirs,
+        y_top,
+        sp,
+        fng_pos_default,
+        font,
+    ) {
+        top = top.max(octave_y + 1.25 * sp);
+    }
+
+    top
+}
+
+fn compute_system_chord_baseline(
+    items: &[LaidOutItem],
+    adj_stem_ends: &std::collections::HashMap<usize, f64>,
+    adj_stem_dirs: &std::collections::HashMap<usize, String>,
+    y_top: f64,
+    sp: f64,
+    fng_pos_default: &str,
+    font: glyph::FontId,
+    vertical_spacing: Option<&str>,
+) -> f64 {
+    let is_tight = vertical_spacing == Some("tight");
+    let (min_base, low_gap) = if is_tight {
+        (1.6 * sp, 0.55 * sp)
+    } else {
+        (2.5 * sp, 1.35 * sp)
+    };
+    let mut system_chord_y = y_top + min_base;
+
+    for (idx, item) in items.iter().enumerate() {
+        if item.event.chord_symbol().map_or(true, |cs| cs.is_empty()) {
+            continue;
+        }
+        let stack_top = compute_item_above_stack_top(
+            items,
+            idx,
+            adj_stem_ends,
+            adj_stem_dirs,
+            y_top,
+            sp,
+            fng_pos_default,
+            font,
+        );
+        let req_y = stack_top + low_gap;
+        system_chord_y = system_chord_y.max(req_y);
+    }
+
+    system_chord_y
+}
+
 fn chord_symbol_top_y(
     items: &[LaidOutItem],
     idx: usize,
@@ -5574,47 +5702,16 @@ fn chord_symbol_top_y(
     if cs.is_empty() {
         return None;
     }
-    let low_top = above_item_content_top(
-        &items[idx],
-        idx,
+    let base_y = compute_system_chord_baseline(
+        items,
         adj_stem_ends,
         adj_stem_dirs,
         y_top,
         sp,
         fng_pos_default,
         font,
+        vertical_spacing,
     );
-    let is_tight = vertical_spacing == Some("tight");
-    let (min_base, low_gap) = if is_tight {
-        (1.6 * sp, 0.55 * sp)
-    } else {
-        (2.5 * sp, 1.35 * sp)
-    };
-    let mut base_y = (y_top + min_base).max(low_top + low_gap);
-    if let Some(trill_top) = active_trill_visual_top_y(
-        items,
-        idx,
-        adj_stem_ends,
-        adj_stem_dirs,
-        y_top,
-        sp,
-        fng_pos_default,
-        font,
-    ) {
-        base_y = base_y.max(trill_top + 1.15 * sp);
-    }
-    if let Some(octave_y) = active_above_octave_line_y(
-        items,
-        idx,
-        adj_stem_ends,
-        adj_stem_dirs,
-        y_top,
-        sp,
-        fng_pos_default,
-        font,
-    ) {
-        base_y = base_y.max(octave_y + 1.25 * sp);
-    }
     Some(base_y + text_height_mm(10.0))
 }
 
@@ -6013,40 +6110,19 @@ fn render_inline_text(
         }
     }
 
-    // Chord symbol — must clear the fingering stack with a visible gap.
+    // Chord symbol — placed at the uniform system chord baseline.
     if let Some(cs) = ev.chord_symbol() {
         if !cs.is_empty() {
-            let is_tight = vertical_spacing == Some("tight");
-            let (min_base, low_gap) = if is_tight {
-                (1.6 * sp, 0.55 * sp)
-            } else {
-                (2.5 * sp, 1.35 * sp)
-            };
-            let mut chord_base_y = (y_top + min_base).max(above_stack_top + low_gap);
-            if let Some(trill_top) = active_trill_visual_top_y(
+            let chord_base_y = compute_system_chord_baseline(
                 items,
-                idx,
                 adj_stem_ends,
                 adj_stem_dirs,
                 y_top,
                 sp,
                 fng_pos_default,
                 font,
-            ) {
-                chord_base_y = chord_base_y.max(trill_top + 1.15 * sp);
-            }
-            if let Some(octave_y) = active_above_octave_line_y(
-                items,
-                idx,
-                adj_stem_ends,
-                adj_stem_dirs,
-                y_top,
-                sp,
-                fng_pos_default,
-                font,
-            ) {
-                chord_base_y = chord_base_y.max(octave_y + 1.25 * sp);
-            }
+                vertical_spacing,
+            );
             cmds.push(DrawCmd::Text {
                 x,
                 y: chord_base_y,
@@ -6057,7 +6133,6 @@ fn render_inline_text(
                 a: "south".into(),
                 color: color_owned(chord_symbol_color),
             });
-            // Chord text is ~10pt ≈ 3.5mm ≈ 2 sp — advance stack by that
             above_stack_top = above_stack_top.max(chord_base_y + text_height_mm(10.0));
         }
     }
@@ -7964,4 +8039,45 @@ fn test_check_leland_glyph_indices() {
     check(0xE612, "stringUpBow");
     check(0xEB60, "arrowUp");
     check(0xEB64, "arrowDown");
+}
+
+#[test]
+fn test_precedence_stack_and_uniform_chord_baseline() {
+    use crate::parser::parse_music;
+    use crate::layout::layout_staff_font;
+
+    let music = "|:g'8[G]q[up-arrow]f'e'  f'[Bm]bb|";
+    let events = parse_music(music, 4);
+    let laid_out = layout_staff_font(&events, None, None, false, &[], glyph::FontId::Leland);
+    let adj_stem_ends = std::collections::HashMap::new();
+    let adj_stem_dirs = std::collections::HashMap::new();
+
+    let y_base = compute_system_chord_baseline(
+        &laid_out.items,
+        &adj_stem_ends,
+        &adj_stem_dirs,
+        0.0,
+        1.75,
+        "above",
+        glyph::FontId::Leland,
+        Some("tight"),
+    );
+
+    // 1. Bowing mark stack top for item 1 (g'8[G]q[up-arrow], after barline at index 0)
+    let item1_stack_top = compute_item_above_stack_top(
+        &laid_out.items,
+        1,
+        &adj_stem_ends,
+        &adj_stem_dirs,
+        0.0,
+        1.75,
+        "above",
+        glyph::FontId::Leland,
+    );
+
+    // Item 1 bowing mark sits above notehead (0.0 + 1.2*sp = 2.1), extending to 2.1 + 1.25*sp = 4.2875 mm
+    assert!(item1_stack_top > 2.0 * 1.75, "Bowing mark must advance the above-staff stack top");
+
+    // 2. System chord baseline sits above item 1's bowing mark layer with low_gap clearance
+    assert!(y_base >= item1_stack_top + 0.55 * 1.75, "Chord baseline must sit above the bowing mark stack top");
 }
