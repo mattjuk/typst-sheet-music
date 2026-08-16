@@ -64,7 +64,7 @@
   vertical-spacing: "tight",
   chord-style: "elegant",
   staff-size: 2mm,
-  music: "|:g'8[G]q[up-arrow]f'e'  f'[Bm]bb  f'bb|g'[G]f'e'  f'[Bm]bb  f'[A]g'a'|g'[G]f'e'  f'[Bm]bb  e'[G]f'g'|a'[A]g'f'  e'f'd'  c'q[down-arrow]ba:|
+  music: "|:g'8[G]q[up-arrow]f'e'  f'[F#m]bb  f'bb|g'[G]f'e'  f'[Bm]bb  f'[A]g'a'|g'[G]f'e'  f'[Bm]bb  e'[G]f'g'|a'[A]g'f'  e'f'd'  c'q[down-arrow]ba:|
           |:d'4[D]q[up-arrow]e'8  f'd'f'  e'[A]c'q[down-arrow]a|d'4[D]q[up-arrow]e'8  f'e'd'  g'[G]f'e'|d'4[D]e'8  f'd'f'  e'[G]f'g'|a'[A]g'f'  e'f'd'  c'q[down-arrow]ba:|
   ",
 )
