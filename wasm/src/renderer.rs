@@ -1100,16 +1100,15 @@ fn svg_from_cmds(
             DrawCmd::FormattedChord {
                 x,
                 y,
-                base,
-                sup,
-                slash,
+                parts,
                 s,
                 ..
             } => {
                 let size_mm = *s * 25.4 / 72.0;
-                let total_chars = base.chars().count()
-                    + sup.as_ref().map_or(0, |s| s.chars().count())
-                    + slash.as_ref().map_or(0, |s| s.chars().count());
+                let total_chars: usize = parts
+                    .iter()
+                    .map(|(b, sp)| b.chars().count() + sp.as_ref().map_or(0, |st| st.chars().count()))
+                    .sum();
                 let pad_x = size_mm * 0.65 * total_chars.max(1) as f64;
                 update_bounds(&mut bounds, ox + x - pad_x, oy + y - size_mm);
                 update_bounds(&mut bounds, ox + x + pad_x, oy + y + size_mm);
@@ -1336,9 +1335,7 @@ fn svg_from_cmds(
             DrawCmd::FormattedChord {
                 x,
                 y,
-                base,
-                sup,
-                slash,
+                parts,
                 s,
                 w,
                 i,
@@ -1355,7 +1352,7 @@ fn svg_from_cmds(
                 };
                 let style = if *i { "italic" } else { "normal" };
                 let size_mm = *s * 25.4 / 72.0;
-                let sup_size_mm = size_mm * 0.78;
+                let sup_size_mm = size_mm * 0.80; // 80% size per user request
                 let dy_up = -size_mm * 0.40;
                 let dy_down = -dy_up;
                 let _ = write!(
@@ -1363,35 +1360,33 @@ fn svg_from_cmds(
                     "<text x=\"{:.3}\" y=\"{:.3}\" font-size=\"{:.3}\" font-weight=\"{}\" font-style=\"{}\" text-anchor=\"{}\" dominant-baseline=\"{}\" fill=\"{}\">",
                     tx(ox + x), ty(oy + y), size_mm, weight, style, text_anchor, baseline, xml_escape(fill)
                 );
-                write_chord_text_with_smufl(&mut svg, base, size_mm, &escaped_music_font);
-                if let Some(sup_text) = sup {
-                    if !sup_text.is_empty() {
-                        let _ = write!(
-                            svg,
-                            "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
-                            sup_size_mm, dy_up
-                        );
-                        write_chord_text_with_smufl(&mut svg, sup_text, sup_size_mm, &escaped_music_font);
-                        svg.push_str("</tspan>");
-                        if let Some(slash_text) = slash {
-                            if !slash_text.is_empty() {
-                                let _ = write!(
-                                    svg,
-                                    "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
-                                    size_mm, dy_down
-                                );
-                                write_chord_text_with_smufl(&mut svg, slash_text, size_mm, &escaped_music_font);
-                                svg.push_str("</tspan>");
-                            }
-                        }
-                    } else if let Some(slash_text) = slash {
-                        if !slash_text.is_empty() {
-                            write_chord_text_with_smufl(&mut svg, slash_text, size_mm, &escaped_music_font);
+                let mut is_in_sup = false;
+                for (base, sup) in parts {
+                    if !base.is_empty() {
+                        if is_in_sup {
+                            let _ = write!(
+                                svg,
+                                "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
+                                size_mm, dy_down
+                            );
+                            write_chord_text_with_smufl(&mut svg, base, size_mm, &escaped_music_font);
+                            svg.push_str("</tspan>");
+                            is_in_sup = false;
+                        } else {
+                            write_chord_text_with_smufl(&mut svg, base, size_mm, &escaped_music_font);
                         }
                     }
-                } else if let Some(slash_text) = slash {
-                    if !slash_text.is_empty() {
-                        write_chord_text_with_smufl(&mut svg, slash_text, size_mm, &escaped_music_font);
+                    if let Some(sup_text) = sup {
+                        if !sup_text.is_empty() {
+                            let _ = write!(
+                                svg,
+                                "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
+                                sup_size_mm, dy_up
+                            );
+                            write_chord_text_with_smufl(&mut svg, sup_text, sup_size_mm, &escaped_music_font);
+                            svg.push_str("</tspan>");
+                            is_in_sup = true;
+                        }
                     }
                 }
                 svg.push_str("</text>");
@@ -6295,13 +6290,11 @@ fn render_inline_text(
                 vertical_spacing,
             );
             if chord_style == Some("elegant") {
-                let (base, sup, slash) = format_elegant_chord(cs);
+                let parts = format_elegant_chord(cs);
                 cmds.push(DrawCmd::FormattedChord {
                     x,
                     y: chord_base_y,
-                    base,
-                    sup,
-                    slash,
+                    parts,
                     s: 10.0,
                     w: "bold".into(),
                     i: false,
@@ -8277,7 +8270,95 @@ fn test_precedence_stack_and_uniform_chord_baseline() {
     assert!(y_base >= item1_stack_top + 0.55 * 1.75, "Chord baseline must sit above the note mark stack top");
 }
 
-pub fn format_elegant_chord(cs: &str) -> (String, Option<String>, Option<String>) {
+pub fn format_elegant_chord(cs: &str) -> Vec<(String, Option<String>)> {
+    if cs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut tokens: Vec<(String, bool)> = Vec::new();
+    let chars: Vec<char> = cs.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_whitespace() {
+            let mut sp = String::new();
+            while i < chars.len() && chars[i].is_whitespace() {
+                sp.push(chars[i]);
+                i += 1;
+            }
+            tokens.push((sp, true));
+        } else {
+            let mut word = String::new();
+            while i < chars.len() && !chars[i].is_whitespace() {
+                word.push(chars[i]);
+                i += 1;
+            }
+            tokens.push((word, false));
+        }
+    }
+
+    let mut segments: Vec<(String, Option<String>)> = Vec::new();
+    let mut pending_space = String::new();
+
+    for (token, is_whitespace) in tokens {
+        if is_whitespace {
+            pending_space.push_str(&token);
+            continue;
+        }
+
+        let mut prefix = std::mem::take(&mut pending_space);
+        let mut t = token.as_str();
+
+        while t.starts_with('(') || t.starts_with('[') {
+            let ch = t.chars().next().unwrap();
+            prefix.push(ch);
+            t = &t[ch.len_utf8()..];
+        }
+
+        let mut suffix = String::new();
+        while t.ends_with(')') || t.ends_with(']') {
+            let ch = t.chars().last().unwrap();
+            suffix.insert(0, ch);
+            t = &t[..t.len() - ch.len_utf8()];
+        }
+
+        let (base, sup, slash) = format_elegant_single_chord(t);
+        let first_base = format!("{}{}", prefix, base);
+        segments.push((first_base, sup));
+
+        if let Some(slash_str) = slash {
+            let slash_with_suffix = format!("{}{}", slash_str, suffix);
+            segments.push((slash_with_suffix, None));
+        } else if !suffix.is_empty() {
+            segments.push((suffix, None));
+        }
+    }
+
+    if !pending_space.is_empty() {
+        if let Some(last) = segments.last_mut() {
+            last.0.push_str(&pending_space);
+        } else {
+            segments.push((pending_space, None));
+        }
+    }
+
+    // Merge adjacent segments where both have sup == None
+    let mut merged: Vec<(String, Option<String>)> = Vec::new();
+    for (b, s) in segments {
+        if s.is_none() {
+            if let Some(last) = merged.last_mut() {
+                if last.1.is_none() {
+                    last.0.push_str(&b);
+                    continue;
+                }
+            }
+        }
+        merged.push((b, s));
+    }
+
+    merged
+}
+
+pub fn format_elegant_single_chord(cs: &str) -> (String, Option<String>, Option<String>) {
     if cs.is_empty() {
         return (String::new(), None, None);
     }
@@ -8462,21 +8543,28 @@ fn format_chord_accidental_tensions(s: &str) -> String {
 
 #[test]
 fn test_format_elegant_chord_symbols() {
-    assert_eq!(format_elegant_chord("D7#9"), ("D".to_string(), Some("7\u{ed62}9".to_string()), None));
+    assert_eq!(format_elegant_chord("D7#9"), vec![("D".to_string(), Some("7\u{ed62}9".to_string()))]);
     assert_eq!(
         format_elegant_chord("D7#9/F#"),
-        ("D".to_string(), Some("7\u{ed62}9".to_string()), Some("/F\u{ed62}".to_string()))
+        vec![("D".to_string(), Some("7\u{ed62}9".to_string())), ("/F\u{ed62}".to_string(), None)]
     );
-    assert_eq!(format_elegant_chord("F#m7"), ("F\u{ed62}m".to_string(), Some("7".to_string()), None));
-    assert_eq!(format_elegant_chord("Bb"), ("B\u{ed60}".to_string(), None, None));
-    assert_eq!(format_elegant_chord("Bbm7b5"), ("B\u{ed60}m".to_string(), Some("7\u{ed60}5".to_string()), None));
-    assert_eq!(format_elegant_chord("Csus4"), ("C".to_string(), Some("sus4".to_string()), None));
-    assert_eq!(format_elegant_chord("C7sus4"), ("C".to_string(), Some("7sus4".to_string()), None));
-    assert_eq!(format_elegant_chord("CmM7"), ("Cm".to_string(), Some("\u{0394}7".to_string()), None));
-    assert_eq!(format_elegant_chord("Cmaj7"), ("C".to_string(), Some("\u{0394}7".to_string()), None));
-    assert_eq!(format_elegant_chord("Ebmaj9"), ("E\u{ed60}".to_string(), Some("\u{0394}9".to_string()), None));
-    assert_eq!(format_elegant_chord("Am7/G"), ("Am".to_string(), Some("7".to_string()), Some("/G".to_string())));
-    assert_eq!(format_elegant_chord("C/E"), ("C".to_string(), None, Some("/E".to_string())));
-    assert_eq!(format_elegant_chord("C6/9"), ("C".to_string(), Some("6/9".to_string()), None));
-    assert_eq!(format_elegant_chord("NC"), ("NC".to_string(), None, None));
+    assert_eq!(format_elegant_chord("F#m7"), vec![("F\u{ed62}m".to_string(), Some("7".to_string()))]);
+    assert_eq!(format_elegant_chord("Bb"), vec![("B\u{ed60}".to_string(), None)]);
+    assert_eq!(format_elegant_chord("Bbm7b5"), vec![("B\u{ed60}m".to_string(), Some("7\u{ed60}5".to_string()))]);
+    assert_eq!(format_elegant_chord("Csus4"), vec![("C".to_string(), Some("sus4".to_string()))]);
+    assert_eq!(format_elegant_chord("C7sus4"), vec![("C".to_string(), Some("7sus4".to_string()))]);
+    assert_eq!(format_elegant_chord("CmM7"), vec![("Cm".to_string(), Some("\u{0394}7".to_string()))]);
+    assert_eq!(format_elegant_chord("Cmaj7"), vec![("C".to_string(), Some("\u{0394}7".to_string()))]);
+    assert_eq!(format_elegant_chord("Ebmaj9"), vec![("E\u{ed60}".to_string(), Some("\u{0394}9".to_string()))]);
+    assert_eq!(
+        format_elegant_chord("Am7/G"),
+        vec![("Am".to_string(), Some("7".to_string())), ("/G".to_string(), None)]
+    );
+    assert_eq!(format_elegant_chord("C/E"), vec![("C/E".to_string(), None)]);
+    assert_eq!(format_elegant_chord("C6/9"), vec![("C".to_string(), Some("6/9".to_string()))]);
+    assert_eq!(format_elegant_chord("NC"), vec![("NC".to_string(), None)]);
+    assert_eq!(
+        format_elegant_chord("A7 (D7)"),
+        vec![("A".to_string(), Some("7".to_string())), (" (D".to_string(), Some("7".to_string())), (")".to_string(), None)]
+    );
 }

@@ -42,7 +42,19 @@
 
 #v(1cm)
 
-== Test 4: Lead Sheet with Note Marks & Elegant Chords
+== Test 4: Alternate Chords and Multi-Chord Groups
+
+#melody(
+  title: "Alternate Chords & Multi-Chord Groups (chord-style: \"elegant\")",
+  key: "C",
+  time: "4/4",
+  chord-style: "elegant",
+  music: "c4[A7 (D7)] d4[A7 (D7#9/F#)] e4[C (Am7 Dm7 G7)] f4[F#m7 (B7)]",
+)
+
+#v(1cm)
+
+== Test 5: Lead Sheet with Note Marks & Elegant Chords
 
 #melody(
   title: "The Humours of Whiskey (Elegant Chords)",
@@ -56,3 +68,4 @@
           |:d'4[D]q[up-arrow]e'8  f'd'f'  e'[A]c'q[down-arrow]a|d'4[D]q[up-arrow]e'8  f'e'd'  g'[G]f'e'|d'4[D]e'8  f'd'f'  e'[G]f'g'|a'[A]g'f'  e'f'd'  c'q[down-arrow]ba:|
   ",
 )
+

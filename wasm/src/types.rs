@@ -992,14 +992,12 @@ pub enum DrawCmd {
         color: Option<String>,
     },
 
-    /// Formatted chord symbol with baseline, superscript, and slash bass parts
+    /// Formatted chord symbol with baseline and superscript parts
     #[serde(rename = "FC")]
     FormattedChord {
         x: f64,
         y: f64,
-        base: String,
-        sup: Option<String>,
-        slash: Option<String>,
+        parts: Vec<(String, Option<String>)>,
         s: f64,
         w: Cow<'static, str>,
         i: bool,
