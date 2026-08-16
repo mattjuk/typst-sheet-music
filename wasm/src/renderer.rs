@@ -1355,8 +1355,8 @@ fn svg_from_cmds(
                 };
                 let style = if *i { "italic" } else { "normal" };
                 let size_mm = *s * 25.4 / 72.0;
-                let sup_size_mm = size_mm * 0.70;
-                let dy_up = -size_mm * 0.42;
+                let sup_size_mm = size_mm * 0.78;
+                let dy_up = -size_mm * 0.40;
                 let dy_down = -dy_up;
                 let _ = write!(
                     svg,
