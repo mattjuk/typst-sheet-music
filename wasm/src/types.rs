@@ -378,6 +378,20 @@ impl Event {
             _ => 0,
         }
     }
+    pub fn beam_start(&self) -> bool {
+        match self {
+            Event::Note(n) => n.beam_start,
+            Event::Chord(c) => c.beam_start,
+            _ => false,
+        }
+    }
+    pub fn beam_end(&self) -> bool {
+        match self {
+            Event::Note(n) => n.beam_end,
+            Event::Chord(c) => c.beam_end,
+            _ => false,
+        }
+    }
     pub fn tuplet_start(&self) -> bool {
         match self {
             Event::Note(n) => n.tuplet_start,

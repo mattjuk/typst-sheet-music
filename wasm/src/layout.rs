@@ -757,7 +757,7 @@ pub fn event_width_font(
     }
 }
 
-fn tuplet_duration_scale(event: &Event) -> Option<f64> {
+pub(crate) fn tuplet_duration_scale(event: &Event) -> Option<f64> {
     let in_time_of = event.tuplet_beats();
     if in_time_of <= 0.0 {
         return None;
