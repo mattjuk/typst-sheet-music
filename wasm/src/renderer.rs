@@ -18,6 +18,37 @@ const GRACE_STEM_MIN_LENGTH: f64 = 3.0;
 const MUSIC_START_PADDING: f64 = 1.55;
 const LELAND_FONT: &[u8] = include_bytes!("../../fonts/Leland.otf");
 
+fn leland_font_base64() -> &'static str {
+    static CACHE: OnceLock<String> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut out = String::with_capacity((LELAND_FONT.len() * 4 / 3) + 4);
+        const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut chunks = LELAND_FONT.chunks_exact(3);
+        for chunk in &mut chunks {
+            let n = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | (chunk[2] as u32);
+            out.push(B64_CHARS[((n >> 18) & 63) as usize] as char);
+            out.push(B64_CHARS[((n >> 12) & 63) as usize] as char);
+            out.push(B64_CHARS[((n >> 6) & 63) as usize] as char);
+            out.push(B64_CHARS[(n & 63) as usize] as char);
+        }
+        let rem = chunks.remainder();
+        if rem.len() == 1 {
+            let n = (rem[0] as u32) << 16;
+            out.push(B64_CHARS[((n >> 18) & 63) as usize] as char);
+            out.push(B64_CHARS[((n >> 12) & 63) as usize] as char);
+            out.push('=');
+            out.push('=');
+        } else if rem.len() == 2 {
+            let n = ((rem[0] as u32) << 16) | ((rem[1] as u32) << 8);
+            out.push(B64_CHARS[((n >> 18) & 63) as usize] as char);
+            out.push(B64_CHARS[((n >> 12) & 63) as usize] as char);
+            out.push(B64_CHARS[((n >> 6) & 63) as usize] as char);
+            out.push('=');
+        }
+        out
+    })
+}
+
 // ─── SMuFL codepoint helpers ───────────────────────────────────────────
 
 fn notehead_codepoint(duration: i32) -> u32 {
@@ -1165,12 +1196,18 @@ fn svg_from_cmds(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{:.3}mm\" height=\"{:.3}mm\" viewBox=\"0 0 {:.3} {:.3}\" overflow=\"visible\">",
         vb_w, vb_h, vb_w, vb_h
     );
+    let has_formatted_chords = cmds.iter().any(|cmd| matches!(cmd, DrawCmd::FormattedChord { .. }));
     let music_defs = music_face
         .as_ref()
         .map(|face| collect_music_glyph_defs(face, cmds))
         .unwrap_or_default();
-    if !music_defs.is_empty() {
+    if !music_defs.is_empty() || (has_formatted_chords && music_font == "Leland") {
         svg.push_str("<defs>");
+        if has_formatted_chords && music_font == "Leland" {
+            svg.push_str("<style>@font-face{font-family:\"Leland\";src:url(\"data:font/otf;base64,");
+            svg.push_str(leland_font_base64());
+            svg.push_str("\");}</style>");
+        }
         for (gid, path) in &music_defs {
             let _ = write!(svg, "<path id=\"b{:x}\" d=\"{}\"/>", gid, path);
         }
