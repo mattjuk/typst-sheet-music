@@ -2067,12 +2067,57 @@ fn finalize_raw_beam_group(raw_beam_groups: &mut Vec<Vec<usize>>, cur_beam: &mut
     }
 }
 
-fn collect_raw_beam_groups(items: &[LaidOutItem]) -> Vec<Vec<usize>> {
+fn event_duration_beats(event: &Event) -> f64 {
+    let dur = event.duration();
+    if dur <= 0 {
+        return 0.0;
+    }
+    let mut base_beats = 4.0 / (dur as f64);
+    let dots = event.dots();
+    if dots == 1 {
+        base_beats *= 1.5;
+    } else if dots >= 2 {
+        base_beats *= 1.75;
+    }
+    if let Some(scale) = crate::layout::tuplet_duration_scale(event) {
+        base_beats *= scale;
+    }
+    base_beats
+}
+
+fn collect_raw_beam_groups(
+    items: &[LaidOutItem],
+    initial_time: Option<&TimeInfo>,
+) -> Vec<Vec<usize>> {
     let mut raw_beam_groups: Vec<Vec<usize>> = Vec::with_capacity(16);
     let mut cur_beam: Vec<usize> = Vec::with_capacity(8);
 
+    let mut current_time = initial_time.cloned().unwrap_or(TimeInfo {
+        upper: 4,
+        lower: 4,
+        symbol: None,
+    });
+
+    let mut measure_pos_beats = 0.0_f64;
+
     for (i, item) in items.iter().enumerate() {
         let ev = &item.event;
+
+        if let Event::TimeSig(t) = ev {
+            current_time = TimeInfo {
+                upper: t.upper,
+                lower: t.lower,
+                symbol: t.symbol.clone(),
+            };
+            finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+            continue;
+        }
+
+        if matches!(ev, Event::Barline(_)) {
+            measure_pos_beats = 0.0;
+            finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+            continue;
+        }
 
         // Repeated spaces are parsed as Gap events. Treat them as explicit
         // beam separators so manual spacing-driven beam breaks stay stable.
@@ -2081,22 +2126,80 @@ fn collect_raw_beam_groups(items: &[LaidOutItem]) -> Vec<Vec<usize>> {
             continue;
         }
 
+        let beats = event_duration_beats(ev);
+        let pos_start = measure_pos_beats;
+        let pos_end = pos_start + beats;
+        measure_pos_beats = pos_end;
+
         let beamable = (ev.is_note() || ev.is_chord()) && ev.duration() >= 8;
         let grace = ev.grace();
-        if beamable {
-            let same_grace =
-                cur_beam.is_empty() || items[*cur_beam.first().unwrap()].event.grace() == grace;
-            let same_voice =
-                cur_beam.is_empty() || items[*cur_beam.first().unwrap()].voice == item.voice;
-            if !same_grace || !same_voice {
+
+        if !beamable {
+            finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+            continue;
+        }
+
+        let explicit_start = ev.beam_start();
+        let explicit_end = ev.beam_end();
+
+        if explicit_start && !cur_beam.is_empty() {
+            finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+        }
+
+        let same_grace =
+            cur_beam.is_empty() || items[*cur_beam.first().unwrap()].event.grace() == grace;
+        let same_voice =
+            cur_beam.is_empty() || items[*cur_beam.first().unwrap()].voice == item.voice;
+        if !same_grace || !same_voice {
+            finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+        }
+
+        // Beat boundary break check for automatic beaming (when not explicitly continuing)
+        if !cur_beam.is_empty() && !explicit_start {
+            let prev_idx = *cur_beam.last().unwrap();
+            let prev_explicit_end = items[prev_idx].event.beam_end();
+
+            if prev_explicit_end {
                 finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+            } else {
+                let upper = current_time.upper;
+                let lower = current_time.lower;
+
+                let should_break = if grace {
+                    cur_beam.len() >= 8
+                } else if lower == 8 && upper % 3 == 0 {
+                    // Compound meters (6/8, 9/8, 12/8): beat unit = 1.5 quarter beats (dotted quarter)
+                    let beat_unit = 1.5_f64;
+                    let rem = pos_start % beat_unit;
+                    rem < 1e-4 || (beat_unit - rem) < 1e-4
+                } else if lower == 4 {
+                    // Simple meters with lower=4 (2/4, 3/4, 4/4, 5/4, etc.): break on every quarter-note beat
+                    let rem = pos_start % 1.0;
+                    rem < 1e-4 || (1.0 - rem) < 1e-4
+                } else if lower == 2 {
+                    // Cut time (2/2): break on half-note beats (2.0)
+                    let rem = pos_start % 2.0;
+                    rem < 1e-4 || (2.0 - rem) < 1e-4
+                } else if lower == 8 {
+                    // Short compound/simple 8th meters (3/8, 2/8)
+                    let beat_unit = (upper as f64) * 0.5;
+                    let rem = pos_start % beat_unit;
+                    rem < 1e-4 || (beat_unit - rem) < 1e-4
+                } else {
+                    let beat_unit = 4.0 / (lower as f64);
+                    let rem = pos_start % beat_unit;
+                    rem < 1e-4 || (beat_unit - rem) < 1e-4
+                };
+
+                if should_break {
+                    finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
+                }
             }
-            let limit = if grace { 8 } else { 4 };
-            if cur_beam.len() == limit {
-                finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
-            }
-            cur_beam.push(i);
-        } else {
+        }
+
+        cur_beam.push(i);
+
+        if explicit_end {
             finalize_raw_beam_group(&mut raw_beam_groups, &mut cur_beam);
         }
     }
@@ -3157,7 +3260,7 @@ fn render_system(
     let black_bottom = black_bb.map_or(-0.82, |b| b.sw_y);
 
     // ── Auto-beaming ──
-    let raw_beam_groups = collect_raw_beam_groups(items);
+    let raw_beam_groups = collect_raw_beam_groups(items, opening_time);
 
     // Compute beam geometry
     let mut adj_stem_ends: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
@@ -5206,8 +5309,60 @@ mod beam_tests {
         ];
 
         assert_eq!(
-            collect_raw_beam_groups(&items),
+            collect_raw_beam_groups(&items, None),
             vec![vec![0, 1], vec![3, 4], vec![10, 11]]
+        );
+    }
+
+    #[test]
+    fn test_time_signature_aware_beaming_4_4() {
+        let items: Vec<LaidOutItem> = (0..8)
+            .map(|_| laid_out_item(eighth_note("c")))
+            .collect();
+        let time_4_4 = TimeInfo { upper: 4, lower: 4, symbol: None };
+        // 8 eighth notes in 4/4 should split per beat (4 groups of 2 eighth notes)
+        assert_eq!(
+            collect_raw_beam_groups(&items, Some(&time_4_4)),
+            vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]]
+        );
+    }
+
+    #[test]
+    fn test_time_signature_aware_beaming_3_4() {
+        let items: Vec<LaidOutItem> = (0..6)
+            .map(|_| laid_out_item(eighth_note("c")))
+            .collect();
+        let time_3_4 = TimeInfo { upper: 3, lower: 4, symbol: None };
+        // 6 eighth notes in 3/4 should split into 3 groups of 2 (per quarter-note beat)
+        assert_eq!(
+            collect_raw_beam_groups(&items, Some(&time_3_4)),
+            vec![vec![0, 1], vec![2, 3], vec![4, 5]]
+        );
+    }
+
+    #[test]
+    fn test_time_signature_aware_beaming_6_8() {
+        let items: Vec<LaidOutItem> = (0..6)
+            .map(|_| laid_out_item(eighth_note("c")))
+            .collect();
+        let time_6_8 = TimeInfo { upper: 6, lower: 8, symbol: None };
+        // 6 eighth notes in 6/8 should split into 2 groups of 3 (per dotted-quarter beat)
+        assert_eq!(
+            collect_raw_beam_groups(&items, Some(&time_6_8)),
+            vec![vec![0, 1, 2], vec![3, 4, 5]]
+        );
+    }
+
+    #[test]
+    fn test_time_signature_aware_beaming_9_8() {
+        let items: Vec<LaidOutItem> = (0..9)
+            .map(|_| laid_out_item(eighth_note("c")))
+            .collect();
+        let time_9_8 = TimeInfo { upper: 9, lower: 8, symbol: None };
+        // 9 eighth notes in 9/8 should split into 3 groups of 3
+        assert_eq!(
+            collect_raw_beam_groups(&items, Some(&time_9_8)),
+            vec![vec![0, 1, 2], vec![3, 4, 5], vec![6, 7, 8]]
         );
     }
 
