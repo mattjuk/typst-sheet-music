@@ -797,6 +797,9 @@ fn smufl_name_for_codepoint(codepoint: u32) -> Option<&'static str> {
         0xE08A => Some("timeSigCommon"),
         0xE08B => Some("timeSigCutCommon"),
         0xE566 => Some("ornamentTrill"),
+        0xE567 => Some("ornamentTurn"),
+        0xE56C => Some("ornamentMordent"),
+        0xE56D => Some("ornamentMordentInverted"),
         0xEAA4 => Some("wiggleTrill"),
         0xE4CE => Some("breathMarkComma"),
         0xE4D1 => Some("caesura"),
@@ -3836,15 +3839,15 @@ fn render_system(
                     ),
                 );
 
-                render_bowing_marks(
+                render_note_marks(
                     cmds,
                     x,
-                    &n.bowing_marks,
+                    &n.note_marks,
                     y_top,
                     above_anchor,
                     sp,
                     resolved_color(
-                        n.colors.bowing_marks.as_deref(),
+                        n.colors.note_marks.as_deref(),
                         n.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -3891,15 +3894,15 @@ fn render_system(
                     ),
                 );
 
-                render_bowing_marks(
+                render_note_marks(
                     cmds,
                     x,
-                    &r.bowing_marks,
+                    &r.note_marks,
                     y_top,
                     above_anchor,
                     sp,
                     resolved_color(
-                        r.colors.bowing_marks.as_deref(),
+                        r.colors.note_marks.as_deref(),
                         r.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -3963,15 +3966,15 @@ fn render_system(
                     ),
                 );
 
-                render_bowing_marks(
+                render_note_marks(
                     cmds,
                     x,
-                    &c.bowing_marks,
+                    &c.note_marks,
                     y_top,
                     above_anchor,
                     sp,
                     resolved_color(
-                        c.colors.bowing_marks.as_deref(),
+                        c.colors.note_marks.as_deref(),
                         c.colors.overall.as_deref(),
                         default_color,
                     ),
@@ -5584,16 +5587,16 @@ fn compute_item_above_stack_top(
     );
     let mut top = note_top;
 
-    // 2. Bowing marks above staff
-    let bowing_marks = match ev {
-        Event::Note(n) => &n.bowing_marks,
-        Event::Rest(r) => &r.bowing_marks,
-        Event::Chord(c) => &c.bowing_marks,
+    // 2. Note marks above staff
+    let note_marks = match ev {
+        Event::Note(n) => &n.note_marks,
+        Event::Rest(r) => &r.note_marks,
+        Event::Chord(c) => &c.note_marks,
         _ => &[][..],
     };
-    if !bowing_marks.is_empty() {
-        let bow_base = (y_top + 1.2 * sp).max(note_top + 0.25 * sp);
-        top = top.max(bow_base + 1.25 * sp);
+    if !note_marks.is_empty() {
+        let mark_base = (y_top + 1.2 * sp).max(note_top + 0.25 * sp);
+        top = top.max(mark_base + 1.25 * sp);
     }
 
     // 3. Staff markers above staff (fermatas, trill glyphs, etc.)
@@ -6286,7 +6289,7 @@ fn render_staff_markers(
     }
 }
 
-fn bowing_mark_codepoint(kind: &str) -> Option<u32> {
+fn note_mark_codepoint(kind: &str) -> Option<u32> {
     match kind {
         "down" | "downbow" => Some(0xE610),
         "down-turned" | "downbow-turned" => Some(0xE611),
@@ -6300,25 +6303,30 @@ fn bowing_mark_codepoint(kind: &str) -> Option<u32> {
         "left-hand-pizz" | "pizz" | "+" => Some(0xE632),
         "up-arrow" | "uparrow" | "arrow-up" => Some(0xEB60),
         "down-arrow" | "downarrow" | "arrow-down" => Some(0xEB64),
+        "mordent" | "mord" | "short-trill" => Some(0xE56C),
+        "lower-mordent" | "low-mordent" | "lmord" | "mordent-inverted" | "inverted-mordent" => {
+            Some(0xE56D)
+        }
+        "turn" => Some(0xE567),
         _ => None,
     }
 }
 
-fn render_bowing_marks(
+fn render_note_marks(
     cmds: &mut Vec<DrawCmd>,
     x: f64,
-    bowing_marks: &[BowingMark],
+    note_marks: &[NoteMark],
     y_top: f64,
     above_anchor: f64,
     sp: f64,
     color: Option<&str>,
 ) {
-    if bowing_marks.is_empty() {
+    if note_marks.is_empty() {
         return;
     }
 
     let mut cur_y = (y_top + 1.2 * sp).max(above_anchor + 0.25 * sp);
-    for mark in bowing_marks {
+    for mark in note_marks {
         match mark.kind.as_str() {
             "up-arrow" | "uparrow" | "arrow-up" => {
                 let w = 0.13 * sp;
@@ -6377,7 +6385,7 @@ fn render_bowing_marks(
                 cur_y += 1.4 * sp;
             }
             _ => {
-                if let Some(cp) = bowing_mark_codepoint(&mark.kind) {
+                if let Some(cp) = note_mark_codepoint(&mark.kind) {
                     emit_glyph_anchored_colored(cmds, x, cur_y, cp, sp, "south", color);
                     cur_y += 1.4 * sp;
                 }
@@ -8039,6 +8047,9 @@ fn test_check_leland_glyph_indices() {
     check(0xE612, "stringUpBow");
     check(0xEB60, "arrowUp");
     check(0xEB64, "arrowDown");
+    check(0xE56C, "ornamentMordent");
+    check(0xE56D, "ornamentMordentInverted");
+    check(0xE567, "ornamentTurn");
 }
 
 #[test]
@@ -8063,7 +8074,7 @@ fn test_precedence_stack_and_uniform_chord_baseline() {
         Some("tight"),
     );
 
-    // 1. Bowing mark stack top for item 1 (g'8[G]q[up-arrow], after barline at index 0)
+    // 1. Note mark stack top for item 1 (g'8[G]q[up-arrow], after barline at index 0)
     let item1_stack_top = compute_item_above_stack_top(
         &laid_out.items,
         1,
@@ -8075,9 +8086,9 @@ fn test_precedence_stack_and_uniform_chord_baseline() {
         glyph::FontId::Leland,
     );
 
-    // Item 1 bowing mark sits above notehead (0.0 + 1.2*sp = 2.1), extending to 2.1 + 1.25*sp = 4.2875 mm
-    assert!(item1_stack_top > 2.0 * 1.75, "Bowing mark must advance the above-staff stack top");
+    // Item 1 note mark sits above notehead (0.0 + 1.2*sp = 2.1), extending to 2.1 + 1.25*sp = 4.2875 mm
+    assert!(item1_stack_top > 2.0 * 1.75, "Note mark must advance the above-staff stack top");
 
-    // 2. System chord baseline sits above item 1's bowing mark layer with low_gap clearance
-    assert!(y_base >= item1_stack_top + 0.55 * 1.75, "Chord baseline must sit above the bowing mark stack top");
+    // 2. System chord baseline sits above item 1's note mark layer with low_gap clearance
+    assert!(y_base >= item1_stack_top + 0.55 * 1.75, "Chord baseline must sit above the note mark stack top");
 }

@@ -200,7 +200,7 @@ enum EventColorTarget {
     Lyrics,
     Trill,
     StaffMarkers,
-    BowingMarks,
+    NoteMarks,
 }
 
 #[derive(Clone, Copy)]
@@ -481,8 +481,8 @@ impl<'a> Parser<'a> {
             EventColorTarget::StaffMarkers => {
                 Self::set_if_missing(&mut colors.staff_markers, color)
             }
-            EventColorTarget::BowingMarks => {
-                Self::set_if_missing(&mut colors.bowing_marks, color)
+            EventColorTarget::NoteMarks => {
+                Self::set_if_missing(&mut colors.note_marks, color)
             }
         }
     }
@@ -563,8 +563,8 @@ impl<'a> Parser<'a> {
                     if !n.staff_markers.is_empty() {
                         Self::set_if_missing(&mut n.colors.staff_markers, color);
                     }
-                    if !n.bowing_marks.is_empty() {
-                        Self::set_if_missing(&mut n.colors.bowing_marks, color);
+                    if !n.note_marks.is_empty() {
+                        Self::set_if_missing(&mut n.colors.note_marks, color);
                     }
                     if n.octave_line_number != 0 {
                         Self::set_if_missing(&mut n.colors.octave_line, color);
@@ -593,8 +593,8 @@ impl<'a> Parser<'a> {
                     if !r.staff_markers.is_empty() {
                         Self::set_if_missing(&mut r.colors.staff_markers, color);
                     }
-                    if !r.bowing_marks.is_empty() {
-                        Self::set_if_missing(&mut r.colors.bowing_marks, color);
+                    if !r.note_marks.is_empty() {
+                        Self::set_if_missing(&mut r.colors.note_marks, color);
                     }
                     if r.octave_line_number != 0 {
                         Self::set_if_missing(&mut r.colors.octave_line, color);
@@ -638,8 +638,8 @@ impl<'a> Parser<'a> {
                     if !c.staff_markers.is_empty() {
                         Self::set_if_missing(&mut c.colors.staff_markers, color);
                     }
-                    if !c.bowing_marks.is_empty() {
-                        Self::set_if_missing(&mut c.colors.bowing_marks, color);
+                    if !c.note_marks.is_empty() {
+                        Self::set_if_missing(&mut c.colors.note_marks, color);
                     }
                     if c.octave_line_number != 0 {
                         Self::set_if_missing(&mut c.colors.octave_line, color);
@@ -847,7 +847,7 @@ impl<'a> Parser<'a> {
         true
     }
 
-    fn normalize_bowing_kind(kind: &str) -> String {
+    fn normalize_note_mark_kind(kind: &str) -> String {
         match kind.trim().to_lowercase().as_str() {
             "d" | "down" | "downbow" => "down".to_string(),
             "u" | "v" | "up" | "upbow" => "up".to_string(),
@@ -859,19 +859,26 @@ impl<'a> Parser<'a> {
             "behind-bridge" => "behind-bridge".to_string(),
             "on-bridge" => "on-bridge".to_string(),
             "on-tailpiece" => "on-tailpiece".to_string(),
-            "^" | "up-arrow" | "uparrow" | "arrow-up" | "uarrow" => "up-arrow".to_string(),
-            "v-arrow" | "down-arrow" | "downarrow" | "arrow-down" | "darrow" => "down-arrow".to_string(),
+            "^" | "ua" | "up-arrow" | "uparrow" | "arrow-up" | "uarrow" => "up-arrow".to_string(),
+            "v-arrow" | "da" | "down-arrow" | "downarrow" | "arrow-down" | "darrow" => {
+                "down-arrow".to_string()
+            }
+            "mord" | "mordent" | "short-trill" => "mordent".to_string(),
+            "lmord" | "low-mordent" | "lower-mordent" | "mordent-inverted" | "inverted-mordent" => {
+                "lower-mordent".to_string()
+            }
+            "turn" => "turn".to_string(),
             other => other.to_string(),
         }
     }
 
-    fn is_bowing_start(&self, p: usize) -> bool {
+    fn is_note_mark_start(&self, p: usize) -> bool {
         (p + 2 <= self.len() && &self.input[p..p + 2] == b"q[")
             || (p + 3 <= self.len() && &self.input[p..p + 3] == b"q_[")
     }
 
-    fn parse_bowing(&self, p: usize) -> (Vec<BowingMark>, usize) {
-        if !self.is_bowing_start(p) {
+    fn parse_note_marks(&self, p: usize) -> (Vec<NoteMark>, usize) {
+        if !self.is_note_mark_start(p) {
             return (Vec::new(), p);
         }
         let below = p + 2 < self.len() && self.input[p + 1] == b'_';
@@ -879,25 +886,25 @@ impl<'a> Parser<'a> {
         let (value, next_pos) = self.read_bracketed_text(start_bracket + 1);
         let marks = value
             .split_whitespace()
-            .map(|tok| BowingMark {
-                kind: Self::normalize_bowing_kind(tok),
+            .map(|tok| NoteMark {
+                kind: Self::normalize_note_mark_kind(tok),
                 position: "above".to_string(),
             })
             .collect();
         (marks, next_pos)
     }
 
-    fn attach_bowing_mark_to_previous(&mut self, marks: Vec<BowingMark>) -> bool {
+    fn attach_note_mark_to_previous(&mut self, marks: Vec<NoteMark>) -> bool {
         if marks.is_empty() {
             return false;
         }
         match self.events.last_mut() {
-            Some(Event::Note(n)) => n.bowing_marks.extend(marks),
-            Some(Event::Rest(r)) => r.bowing_marks.extend(marks),
-            Some(Event::Chord(c)) => c.bowing_marks.extend(marks),
+            Some(Event::Note(n)) => n.note_marks.extend(marks),
+            Some(Event::Rest(r)) => r.note_marks.extend(marks),
+            Some(Event::Chord(c)) => c.note_marks.extend(marks),
             _ => return false,
         }
-        self.last_color_target = Some(LastColorTarget::Event(EventColorTarget::BowingMarks));
+        self.last_color_target = Some(LastColorTarget::Event(EventColorTarget::NoteMarks));
         true
     }
 
@@ -1043,10 +1050,10 @@ impl<'a> Parser<'a> {
                 att.fingering_position = fng_pos;
                 att.last_color_target = EventColorTarget::Fingering;
                 p = next_p;
-            } else if self.is_bowing_start(p) {
-                let (marks, next_p) = self.parse_bowing(p);
-                att.bowing_marks.extend(marks);
-                att.last_color_target = EventColorTarget::BowingMarks;
+            } else if self.is_note_mark_start(p) {
+                let (marks, next_p) = self.parse_note_marks(p);
+                att.note_marks.extend(marks);
+                att.last_color_target = EventColorTarget::NoteMarks;
                 p = next_p;
             } else if self.peek(p) == Some(b'[') {
                 let (value, next_p) = self.read_bracketed_text(p + 1);
@@ -1068,7 +1075,7 @@ impl<'a> Parser<'a> {
             || (p + 5 <= self.len() && &self.input[p..p + 5] == b"text[")
             || (p + 4 <= self.len() && &self.input[p..p + 4] == b"exp[")
             || self.is_fingering_start(p)
-            || self.is_bowing_start(p)
+            || self.is_note_mark_start(p)
             || self.peek(p) == Some(b'[')
     }
 
@@ -1326,7 +1333,7 @@ impl<'a> Parser<'a> {
                         fingering_position: att.fingering_position,
                         chord_symbol: att.chord_symbol,
                         staff_markers: att.staff_markers,
-                        bowing_marks: att.bowing_marks,
+                        note_marks: att.note_marks,
                         staff_text: att.staff_text,
                         expression_text: att.expression_text,
                         lyrics: att.lyrics,
@@ -1433,9 +1440,9 @@ impl<'a> Parser<'a> {
                     continue;
                 }
 
-                if (token == "q" || token == "q_") && self.is_bowing_start(self.pos) {
-                    let (marks, next_p) = self.parse_bowing(self.pos);
-                    self.attach_bowing_mark_to_previous(marks);
+                if (token == "q" || token == "q_") && self.is_note_mark_start(self.pos) {
+                    let (marks, next_p) = self.parse_note_marks(self.pos);
+                    self.attach_note_mark_to_previous(marks);
                     self.pos = next_p;
                     continue;
                 }
@@ -1538,7 +1545,7 @@ impl<'a> Parser<'a> {
                 note.fingering_position = data.att.fingering_position;
                 note.chord_symbol = data.att.chord_symbol;
                 note.staff_markers = data.att.staff_markers;
-                note.bowing_marks = data.att.bowing_marks;
+                note.note_marks = data.att.note_marks;
                 note.staff_text = data.att.staff_text;
                 note.expression_text = data.att.expression_text;
                 note.lyrics = data.att.lyrics;
@@ -1559,7 +1566,7 @@ impl<'a> Parser<'a> {
                 rest.dynamic = att.dynamic;
                 rest.chord_symbol = att.chord_symbol;
                 rest.staff_markers = att.staff_markers;
-                rest.bowing_marks = att.bowing_marks;
+                rest.note_marks = att.note_marks;
                 rest.staff_text = att.staff_text;
                 rest.expression_text = att.expression_text;
                 rest.lyrics = att.lyrics;
@@ -2077,7 +2084,7 @@ struct NoteAttachments {
     beam_end: bool,
     chord_symbol: Option<String>,
     staff_markers: Vec<String>,
-    bowing_marks: Vec<BowingMark>,
+    note_marks: Vec<NoteMark>,
     staff_text: Option<String>,
     expression_text: Option<String>,
     fingering: Option<Fingering>,
@@ -2099,7 +2106,7 @@ impl Default for NoteAttachments {
             beam_end: false,
             chord_symbol: None,
             staff_markers: Vec::new(),
-            bowing_marks: Vec::new(),
+            note_marks: Vec::new(),
             staff_text: None,
             expression_text: None,
             fingering: None,
@@ -2387,7 +2394,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_bowing_mark_attachments_and_aliases() {
+    fn parses_note_mark_attachments_and_aliases() {
         let events = parse_music(
             "c4q[down] d4q_[up-arrow] e4q[harmonic snap] <f a>4 q[+] g4q[u]color{red}",
             4,
@@ -2399,8 +2406,8 @@ mod tests {
         match &events[0] {
             Event::Note(n) => {
                 assert_eq!(
-                    n.bowing_marks,
-                    vec![BowingMark {
+                    n.note_marks,
+                    vec![NoteMark {
                         kind: "down".to_string(),
                         position: "above".to_string(),
                     }]
@@ -2413,8 +2420,8 @@ mod tests {
         match &events[1] {
             Event::Note(n) => {
                 assert_eq!(
-                    n.bowing_marks,
-                    vec![BowingMark {
+                    n.note_marks,
+                    vec![NoteMark {
                         kind: "up-arrow".to_string(),
                         position: "above".to_string(),
                     }]
@@ -2427,13 +2434,13 @@ mod tests {
         match &events[2] {
             Event::Note(n) => {
                 assert_eq!(
-                    n.bowing_marks,
+                    n.note_marks,
                     vec![
-                        BowingMark {
+                        NoteMark {
                             kind: "harmonic".to_string(),
                             position: "above".to_string(),
                         },
-                        BowingMark {
+                        NoteMark {
                             kind: "snap".to_string(),
                             position: "above".to_string(),
                         }
@@ -2447,8 +2454,8 @@ mod tests {
         match &events[3] {
             Event::Chord(c) => {
                 assert_eq!(
-                    c.bowing_marks,
-                    vec![BowingMark {
+                    c.note_marks,
+                    vec![NoteMark {
                         kind: "left-hand-pizz".to_string(),
                         position: "above".to_string(),
                     }]
@@ -2461,16 +2468,31 @@ mod tests {
         match &events[4] {
             Event::Note(n) => {
                 assert_eq!(
-                    n.bowing_marks,
-                    vec![BowingMark {
+                    n.note_marks,
+                    vec![NoteMark {
                         kind: "up".to_string(),
                         position: "above".to_string(),
                     }]
                 );
-                assert_eq!(n.colors.bowing_marks.as_deref(), Some("#ff0000"));
+                assert_eq!(n.colors.note_marks.as_deref(), Some("#ff0000"));
             }
             other => panic!("expected fifth note, got {other:?}"),
         }
+
+        // Test ua, da, mord, lmord, turn aliases
+        let ornament_events = parse_music("c4q[ua] d4q[da] e4q[mord] f4q[lmord] g4q[turn]", 4);
+        assert_eq!(ornament_events.len(), 5);
+        let kinds: Vec<_> = ornament_events
+            .iter()
+            .map(|ev| match ev {
+                Event::Note(n) => n.note_marks.first().unwrap().kind.clone(),
+                other => panic!("expected note, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["up-arrow", "down-arrow", "mordent", "lower-mordent", "turn"]
+        );
     }
 }
 
