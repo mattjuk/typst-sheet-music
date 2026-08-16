@@ -571,18 +571,6 @@ fn collect_music_glyph_defs(face: &Face<'_>, cmds: &[DrawCmd]) -> BTreeMap<u16, 
                     }
                 }
             }
-            DrawCmd::FormattedChord { parts, .. } => {
-                for (base, sup) in parts {
-                    for ch in base.chars().chain(sup.as_deref().unwrap_or("").chars()) {
-                        if is_chord_accidental(ch) {
-                            let glyph_char = chord_accidental_glyph_char(ch);
-                            if let Some(gid) = glyph_id(face, glyph_char) {
-                                ensure_music_glyph_def(&mut defs, face, gid);
-                            }
-                        }
-                    }
-                }
-            }
             _ => {}
         }
     }
@@ -957,106 +945,85 @@ fn anchored_text_origin(
     (x - anchor_x * scale, y - anchor_y * scale)
 }
 
-fn is_chord_accidental(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{266f}'
-            | '\u{ed62}'
-            | '\u{e262}'
-            | '\u{266d}'
-            | '\u{ed60}'
-            | '\u{e260}'
-            | '\u{266e}'
-            | '\u{ed61}'
-            | '\u{e261}'
-            | '\u{ed63}'
-            | '\u{e263}'
-            | '\u{ed64}'
-            | '\u{e264}'
-    )
-}
+fn write_chord_text_with_smufl(
+    svg: &mut String,
+    text: &str,
+    font_size_mm: f64,
+    escaped_music_font: &str,
+) {
+    let mut current_segment = String::new();
+    let dx_mm = font_size_mm * 0.10; // ~1pt spacing at standard chord size
+    let mut prev_was_accidental = false;
+    for (idx, ch) in text.chars().enumerate() {
+        let is_accidental = matches!(
+            ch,
+            '\u{266f}'
+                | '\u{ed62}'
+                | '\u{e262}'
+                | '\u{266d}'
+                | '\u{ed60}'
+                | '\u{e260}'
+                | '\u{266e}'
+                | '\u{ed61}'
+                | '\u{e261}'
+                | '\u{ed63}'
+                | '\u{e263}'
+                | '\u{ed64}'
+                | '\u{e264}'
+        );
 
-fn chord_accidental_glyph_char(ch: char) -> char {
-    match ch {
-        '\u{266f}' | '\u{ed62}' | '\u{e262}' => '\u{ed62}',
-        '\u{266d}' | '\u{ed60}' | '\u{e260}' => '\u{ed60}',
-        '\u{266e}' | '\u{ed61}' | '\u{e261}' => '\u{ed61}',
-        '\u{ed63}' | '\u{e263}' => '\u{ed63}',
-        '\u{ed64}' | '\u{e264}' => '\u{ed64}',
-        _ => ch,
-    }
-}
-
-fn chord_char_advance_em(ch: char) -> f64 {
-    if ('A'..='G').contains(&ch) {
-        match ch {
-            'A' | 'C' | 'D' => 0.722,
-            'B' | 'E' => 0.667,
-            'F' => 0.611,
-            'G' => 0.778,
-            _ => 0.700,
-        }
-    } else if ('a'..='z').contains(&ch) {
-        match ch {
-            'm' => 0.833,
-            'w' => 0.778,
-            'i' | 'j' | 'l' | 'r' | 't' | 'f' => 0.333,
-            's' | 'c' | 'z' => 0.444,
-            _ => 0.556,
-        }
-    } else if ('0'..='9').contains(&ch) {
-        0.500
-    } else {
-        match ch {
-            '/' | '(' | ')' | '[' | ']' => 0.333,
-            '+' | '-' => 0.500,
-            'Δ' => 0.700,
-            'ø' | 'o' => 0.500,
-            ' ' => 0.250,
-            _ => 0.500,
-        }
-    }
-}
-
-fn chord_accidental_advance_em(ch: char) -> f64 {
-    match chord_accidental_glyph_char(ch) {
-        '\u{ed60}' => 0.384,
-        '\u{ed61}' => 0.300,
-        '\u{ed62}' => 0.456,
-        '\u{ed63}' => 0.456,
-        '\u{ed64}' => 0.600,
-        _ => 0.400,
-    }
-}
-
-enum ChordItem {
-    Text(String),
-    Accidental(char),
-    Space,
-}
-
-fn split_chord_str_into_items(s: &str) -> Vec<ChordItem> {
-    let mut items = Vec::new();
-    let mut current_text = String::new();
-    for ch in s.chars() {
-        if is_chord_accidental(ch) {
-            if !current_text.is_empty() {
-                items.push(ChordItem::Text(std::mem::take(&mut current_text)));
+        if is_accidental {
+            if !current_segment.is_empty() {
+                if prev_was_accidental {
+                    let _ = write!(
+                        svg,
+                        "<tspan dx=\"{:.3}\">{}</tspan>",
+                        dx_mm,
+                        xml_escape(&current_segment)
+                    );
+                } else {
+                    svg.push_str(&xml_escape(&current_segment));
+                }
+                current_segment.clear();
             }
-            items.push(ChordItem::Accidental(ch));
-        } else if ch == ' ' {
-            if !current_text.is_empty() {
-                items.push(ChordItem::Text(std::mem::take(&mut current_text)));
+            let glyph_char = match ch {
+                '\u{266f}' | '\u{ed62}' | '\u{e262}' => '\u{ed62}',
+                '\u{266d}' | '\u{ed60}' | '\u{e260}' => '\u{ed60}',
+                '\u{266e}' | '\u{ed61}' | '\u{e261}' => '\u{ed61}',
+                '\u{ed63}' | '\u{e263}' => '\u{ed63}',
+                '\u{ed64}' | '\u{e264}' => '\u{ed64}',
+                _ => ch,
+            };
+            if idx > 0 {
+                let _ = write!(
+                    svg,
+                    "<tspan font-family=\"{}, Bravura, 'Noto Music', sans-serif\" font-size=\"{:.3}\" dx=\"{:.3}\">{}</tspan>",
+                    escaped_music_font, font_size_mm, dx_mm, glyph_char
+                );
+            } else {
+                let _ = write!(
+                    svg,
+                    "<tspan font-family=\"{}, Bravura, 'Noto Music', sans-serif\" font-size=\"{:.3}\">{}</tspan>",
+                    escaped_music_font, font_size_mm, glyph_char
+                );
             }
-            items.push(ChordItem::Space);
+            prev_was_accidental = true;
         } else {
-            current_text.push(ch);
+            current_segment.push(ch);
         }
     }
-    if !current_text.is_empty() {
-        items.push(ChordItem::Text(current_text));
+    if !current_segment.is_empty() {
+        if prev_was_accidental {
+            let _ = write!(
+                svg,
+                "<tspan dx=\"{:.3}\">{}</tspan>",
+                dx_mm,
+                xml_escape(&current_segment)
+            );
+        } else {
+            svg.push_str(&xml_escape(&current_segment));
+        }
     }
-    items
 }
 
 fn svg_from_cmds(
@@ -1377,6 +1344,7 @@ fn svg_from_cmds(
             } => {
                 let fill = color.as_deref().unwrap_or("black");
                 let (text_anchor, _) = svg_anchor_attrs(a);
+                let baseline = "alphabetic";
                 let weight = if w.as_ref() == "bold" {
                     "bold"
                 } else {
@@ -1385,111 +1353,43 @@ fn svg_from_cmds(
                 let style = if *i { "italic" } else { "normal" };
                 let size_mm = *s * 25.4 / 72.0;
                 let sup_size_mm = size_mm * 0.80; // 80% size per user request
-                let dy_up = size_mm * 0.40; // upward shift in layout coordinates
-
-                let mut chord_elements: Vec<(ChordItem, bool)> = Vec::new();
+                let dy_up = -size_mm * 0.40;
+                let dy_down = -dy_up;
+                let _ = write!(
+                    svg,
+                    "<text x=\"{:.3}\" y=\"{:.3}\" font-size=\"{:.3}\" font-weight=\"{}\" font-style=\"{}\" text-anchor=\"{}\" dominant-baseline=\"{}\" fill=\"{}\">",
+                    tx(ox + x), ty(oy + y), size_mm, weight, style, text_anchor, baseline, xml_escape(fill)
+                );
+                let mut is_in_sup = false;
                 for (base, sup) in parts {
                     if !base.is_empty() {
-                        for item in split_chord_str_into_items(base) {
-                            chord_elements.push((item, false));
+                        if is_in_sup {
+                            let _ = write!(
+                                svg,
+                                "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
+                                size_mm, dy_down
+                            );
+                            write_chord_text_with_smufl(&mut svg, base, size_mm, &escaped_music_font);
+                            svg.push_str("</tspan>");
+                            is_in_sup = false;
+                        } else {
+                            write_chord_text_with_smufl(&mut svg, base, size_mm, &escaped_music_font);
                         }
                     }
                     if let Some(sup_text) = sup {
                         if !sup_text.is_empty() {
-                            for item in split_chord_str_into_items(sup_text) {
-                                chord_elements.push((item, true));
-                            }
-                        }
-                    }
-                }
-
-                let mut item_widths: Vec<f64> = Vec::with_capacity(chord_elements.len());
-                let mut total_width = 0.0_f64;
-                for (item, is_sup) in &chord_elements {
-                    let fsize = if *is_sup { sup_size_mm } else { size_mm };
-                    let dx = fsize * 0.08;
-                    let w = match item {
-                        ChordItem::Text(txt) => txt.chars().map(chord_char_advance_em).sum::<f64>() * fsize,
-                        ChordItem::Accidental(ch) => chord_accidental_advance_em(*ch) * fsize + 2.0 * dx,
-                        ChordItem::Space => 0.30 * fsize,
-                    };
-                    item_widths.push(w);
-                    total_width += w;
-                }
-
-                let start_x = match text_anchor {
-                    "middle" => x - total_width * 0.5,
-                    "end" => x - total_width,
-                    _ => *x,
-                };
-
-                let mut pen_x = start_x;
-                for ((item, is_sup), w) in chord_elements.into_iter().zip(item_widths) {
-                    let fsize = if is_sup { sup_size_mm } else { size_mm };
-                    let y_pos = if is_sup { y + dy_up } else { *y };
-                    let dx = fsize * 0.08;
-                    match item {
-                        ChordItem::Text(txt) => {
                             let _ = write!(
                                 svg,
-                                "<text x=\"{:.3}\" y=\"{:.3}\" font-size=\"{:.3}\" font-weight=\"{}\" font-style=\"{}\" dominant-baseline=\"alphabetic\" fill=\"{}\">{}</text>",
-                                tx(ox + pen_x),
-                                ty(oy + y_pos),
-                                fsize,
-                                weight,
-                                style,
-                                xml_escape(fill),
-                                xml_escape(&txt)
+                                "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
+                                sup_size_mm, dy_up
                             );
-                        }
-                        ChordItem::Space => {}
-                        ChordItem::Accidental(ch) => {
-                            let glyph_char = chord_accidental_glyph_char(ch);
-                            let rendered_as_use = music_face.as_ref().is_some_and(|face| {
-                                if let Some(gid) = glyph_id(face, glyph_char) {
-                                    if music_defs.contains_key(&gid.0) {
-                                        if let Some(bbox) = face.glyph_bounding_box(gid) {
-                                            let scale = fsize / face.units_per_em() as f64;
-                                            let sw_x = pen_x + dx;
-                                            let sw_y = y_pos + (bbox.y_min as f64) * scale;
-                                            let _ = write!(
-                                                svg,
-                                                "<use href=\"#{id}\" transform=\"translate({x:.3} {y:.3}) scale({scale:.6})\" fill=\"{fill}\"/>",
-                                                id = glyph_def_id(gid),
-                                                x = tx(ox + sw_x),
-                                                y = ty(oy + sw_y),
-                                                scale = scale,
-                                                fill = xml_escape(fill),
-                                            );
-                                            return true;
-                                        }
-                                    }
-                                }
-                                false
-                            });
-                            if !rendered_as_use {
-                                let unicode_char = match glyph_char {
-                                    '\u{ed60}' => '\u{266d}',
-                                    '\u{ed61}' => '\u{266e}',
-                                    '\u{ed62}' => '\u{266f}',
-                                    _ => glyph_char,
-                                };
-                                let _ = write!(
-                                    svg,
-                                    "<text x=\"{:.3}\" y=\"{:.3}\" font-size=\"{:.3}\" font-weight=\"{}\" font-style=\"{}\" dominant-baseline=\"alphabetic\" fill=\"{}\">{}</text>",
-                                    tx(ox + pen_x + dx),
-                                    ty(oy + y_pos),
-                                    fsize,
-                                    weight,
-                                    style,
-                                    xml_escape(fill),
-                                    unicode_char
-                                );
-                            }
+                            write_chord_text_with_smufl(&mut svg, sup_text, sup_size_mm, &escaped_music_font);
+                            svg.push_str("</tspan>");
+                            is_in_sup = true;
                         }
                     }
-                    pen_x += w;
                 }
+                svg.push_str("</text>");
             }
             DrawCmd::Polygon { pts, color } => {
                 let fill = color.as_deref().unwrap_or("black");
