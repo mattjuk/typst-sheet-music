@@ -271,6 +271,7 @@
   relative-octave: false,
   measures-per-line: none,
   vertical-spacing: "regular",
+  chord-style: "plain",
 ) = {
   if staves.len() == 0 { return }
 
@@ -344,6 +345,7 @@
       note_colors: normalize-note-colors(note-colors),
       tuplet_style: tuplet-style,
       vertical_spacing: vertical-spacing,
+      chord_style: chord-style,
     )
 
     let result-bytes = scorify-wasm.render_score(bytes(json.encode(input)))
@@ -387,6 +389,7 @@
   instrument-name: none,
   instrument-name-cont: none,
   vertical-spacing: "regular",
+  chord-style: "plain",
 ) = {
   score(
     staves: ((clef: clef, music: music, instrument-name: instrument-name, instrument-name-cont: instrument-name-cont, note-colors: note-colors),),
@@ -405,6 +408,7 @@
     width: width,
     measures-per-line: measures-per-line,
     vertical-spacing: vertical-spacing,
+    chord-style: chord-style,
   )
 }
 

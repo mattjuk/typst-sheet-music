@@ -388,11 +388,11 @@ impl<'a> Parser<'a> {
     }
 
     fn read_bracketed_text(&self, mut p: usize) -> (String, usize) {
-        let mut value = String::new();
+        let start = p;
         while p < self.len() && self.input[p] != b']' {
-            value.push(self.input[p] as char);
             p += 1;
         }
+        let value = String::from_utf8_lossy(&self.input[start..p]).to_string();
         if p < self.len() {
             p += 1;
         } // consume ']'

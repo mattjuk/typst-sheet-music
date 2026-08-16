@@ -869,10 +869,16 @@ pub struct ScoreInput {
     #[serde(default = "default_tuplet_style")]
     pub tuplet_style: String,
     pub vertical_spacing: Option<String>,
+    #[serde(default = "default_chord_style")]
+    pub chord_style: String,
 }
 
 fn default_tuplet_style() -> String {
     "bracket".to_string()
+}
+
+fn default_chord_style() -> String {
+    "plain".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -978,6 +984,22 @@ pub enum DrawCmd {
         x: f64,
         y: f64,
         v: String,
+        s: f64,
+        w: Cow<'static, str>,
+        i: bool,
+        a: Cow<'static, str>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color: Option<String>,
+    },
+
+    /// Formatted chord symbol with baseline, superscript, and slash bass parts
+    #[serde(rename = "FC")]
+    FormattedChord {
+        x: f64,
+        y: f64,
+        base: String,
+        sup: Option<String>,
+        slash: Option<String>,
         s: f64,
         w: Cow<'static, str>,
         i: bool,

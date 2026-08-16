@@ -945,6 +945,87 @@ fn anchored_text_origin(
     (x - anchor_x * scale, y - anchor_y * scale)
 }
 
+fn write_chord_text_with_smufl(
+    svg: &mut String,
+    text: &str,
+    font_size_mm: f64,
+    escaped_music_font: &str,
+) {
+    let mut current_segment = String::new();
+    let dx_mm = font_size_mm * 0.10; // ~1pt spacing at standard chord size
+    let mut prev_was_accidental = false;
+    for (idx, ch) in text.chars().enumerate() {
+        let is_accidental = matches!(
+            ch,
+            '\u{266f}'
+                | '\u{ed62}'
+                | '\u{e262}'
+                | '\u{266d}'
+                | '\u{ed60}'
+                | '\u{e260}'
+                | '\u{266e}'
+                | '\u{ed61}'
+                | '\u{e261}'
+                | '\u{ed63}'
+                | '\u{e263}'
+                | '\u{ed64}'
+                | '\u{e264}'
+        );
+
+        if is_accidental {
+            if !current_segment.is_empty() {
+                if prev_was_accidental {
+                    let _ = write!(
+                        svg,
+                        "<tspan dx=\"{:.3}\">{}</tspan>",
+                        dx_mm,
+                        xml_escape(&current_segment)
+                    );
+                } else {
+                    svg.push_str(&xml_escape(&current_segment));
+                }
+                current_segment.clear();
+            }
+            let glyph_char = match ch {
+                '\u{266f}' | '\u{ed62}' | '\u{e262}' => '\u{ed62}',
+                '\u{266d}' | '\u{ed60}' | '\u{e260}' => '\u{ed60}',
+                '\u{266e}' | '\u{ed61}' | '\u{e261}' => '\u{ed61}',
+                '\u{ed63}' | '\u{e263}' => '\u{ed63}',
+                '\u{ed64}' | '\u{e264}' => '\u{ed64}',
+                _ => ch,
+            };
+            if idx > 0 {
+                let _ = write!(
+                    svg,
+                    "<tspan font-family=\"{}\" font-size=\"{:.3}\" dx=\"{:.3}\">{}</tspan>",
+                    escaped_music_font, font_size_mm, dx_mm, glyph_char
+                );
+            } else {
+                let _ = write!(
+                    svg,
+                    "<tspan font-family=\"{}\" font-size=\"{:.3}\">{}</tspan>",
+                    escaped_music_font, font_size_mm, glyph_char
+                );
+            }
+            prev_was_accidental = true;
+        } else {
+            current_segment.push(ch);
+        }
+    }
+    if !current_segment.is_empty() {
+        if prev_was_accidental {
+            let _ = write!(
+                svg,
+                "<tspan dx=\"{:.3}\">{}</tspan>",
+                dx_mm,
+                xml_escape(&current_segment)
+            );
+        } else {
+            svg.push_str(&xml_escape(&current_segment));
+        }
+    }
+}
+
 fn svg_from_cmds(
     cmds: &[DrawCmd],
     width_mm: f64,
@@ -1013,6 +1094,23 @@ fn svg_from_cmds(
             DrawCmd::Text { x, y, v, s, .. } => {
                 let size_mm = *s * 25.4 / 72.0;
                 let pad_x = size_mm * 0.65 * v.chars().count().max(1) as f64;
+                update_bounds(&mut bounds, ox + x - pad_x, oy + y - size_mm);
+                update_bounds(&mut bounds, ox + x + pad_x, oy + y + size_mm);
+            }
+            DrawCmd::FormattedChord {
+                x,
+                y,
+                base,
+                sup,
+                slash,
+                s,
+                ..
+            } => {
+                let size_mm = *s * 25.4 / 72.0;
+                let total_chars = base.chars().count()
+                    + sup.as_ref().map_or(0, |s| s.chars().count())
+                    + slash.as_ref().map_or(0, |s| s.chars().count());
+                let pad_x = size_mm * 0.65 * total_chars.max(1) as f64;
                 update_bounds(&mut bounds, ox + x - pad_x, oy + y - size_mm);
                 update_bounds(&mut bounds, ox + x + pad_x, oy + y + size_mm);
             }
@@ -1234,6 +1332,69 @@ fn svg_from_cmds(
                     "<text x=\"{:.3}\" y=\"{:.3}\" font-size=\"{:.3}\" font-weight=\"{}\" font-style=\"{}\" text-anchor=\"{}\" dominant-baseline=\"{}\" fill=\"{}\">{}</text>",
                     tx(ox + x), ty(oy + y), size_mm, weight, style, text_anchor, baseline, xml_escape(fill), xml_escape(v)
                 );
+            }
+            DrawCmd::FormattedChord {
+                x,
+                y,
+                base,
+                sup,
+                slash,
+                s,
+                w,
+                i,
+                a,
+                color,
+            } => {
+                let fill = color.as_deref().unwrap_or("black");
+                let (text_anchor, _) = svg_anchor_attrs(a);
+                let baseline = "alphabetic";
+                let weight = if w.as_ref() == "bold" {
+                    "bold"
+                } else {
+                    "normal"
+                };
+                let style = if *i { "italic" } else { "normal" };
+                let size_mm = *s * 25.4 / 72.0;
+                let sup_size_mm = size_mm * 0.70;
+                let dy_up = -size_mm * 0.42;
+                let dy_down = -dy_up;
+                let _ = write!(
+                    svg,
+                    "<text x=\"{:.3}\" y=\"{:.3}\" font-size=\"{:.3}\" font-weight=\"{}\" font-style=\"{}\" text-anchor=\"{}\" dominant-baseline=\"{}\" fill=\"{}\">",
+                    tx(ox + x), ty(oy + y), size_mm, weight, style, text_anchor, baseline, xml_escape(fill)
+                );
+                write_chord_text_with_smufl(&mut svg, base, size_mm, &escaped_music_font);
+                if let Some(sup_text) = sup {
+                    if !sup_text.is_empty() {
+                        let _ = write!(
+                            svg,
+                            "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
+                            sup_size_mm, dy_up
+                        );
+                        write_chord_text_with_smufl(&mut svg, sup_text, sup_size_mm, &escaped_music_font);
+                        svg.push_str("</tspan>");
+                        if let Some(slash_text) = slash {
+                            if !slash_text.is_empty() {
+                                let _ = write!(
+                                    svg,
+                                    "<tspan font-size=\"{:.3}\" dy=\"{:.3}\">",
+                                    size_mm, dy_down
+                                );
+                                write_chord_text_with_smufl(&mut svg, slash_text, size_mm, &escaped_music_font);
+                                svg.push_str("</tspan>");
+                            }
+                        }
+                    } else if let Some(slash_text) = slash {
+                        if !slash_text.is_empty() {
+                            write_chord_text_with_smufl(&mut svg, slash_text, size_mm, &escaped_music_font);
+                        }
+                    }
+                } else if let Some(slash_text) = slash {
+                    if !slash_text.is_empty() {
+                        write_chord_text_with_smufl(&mut svg, slash_text, size_mm, &escaped_music_font);
+                    }
+                }
+                svg.push_str("</text>");
             }
             DrawCmd::Polygon { pts, color } => {
                 let fill = color.as_deref().unwrap_or("black");
@@ -2148,6 +2309,7 @@ pub fn render_system_group(
     music_font: &str,
     tuplet_style: &str,
     vertical_spacing: Option<&str>,
+    chord_style: &str,
 ) -> SystemOutput {
     let font = glyph::FontId::from_name(music_font);
     let ed = glyph::engraving_defaults(font);
@@ -2331,6 +2493,7 @@ pub fn render_system_group(
             staff_default_color,
             tuplet_style,
             vertical_spacing,
+            chord_style,
         );
 
         y_offset -= staff_height_mm;
@@ -2842,6 +3005,7 @@ fn render_system(
     default_color: Option<&str>,
     tuplet_style: &str,
     vertical_spacing: Option<&str>,
+    chord_style: &str,
 ) {
     let clef_name = laid_out.clef.as_deref();
     let opening_time = laid_out.time.as_ref().or(time.as_ref());
@@ -3820,6 +3984,7 @@ fn render_system(
                     font,
                     default_color,
                     vertical_spacing,
+                    Some(chord_style),
                 );
 
                 // Staff markers
@@ -3877,6 +4042,7 @@ fn render_system(
                     font,
                     default_color,
                     vertical_spacing,
+                    Some(chord_style),
                 );
                 render_staff_markers(
                     cmds,
@@ -3949,6 +4115,7 @@ fn render_system(
                     font,
                     default_color,
                     vertical_spacing,
+                    Some(chord_style),
                 );
                 render_staff_markers(
                     cmds,
@@ -6019,6 +6186,7 @@ fn render_inline_text(
     font: glyph::FontId,
     default_color: Option<&str>,
     vertical_spacing: Option<&str>,
+    chord_style: Option<&str>,
 ) {
     let fng_stack_step = fingering_stack_step(sp);
     let default_sp_numeric = 1.75; // default-staff-space in mm
@@ -6126,16 +6294,32 @@ fn render_inline_text(
                 font,
                 vertical_spacing,
             );
-            cmds.push(DrawCmd::Text {
-                x,
-                y: chord_base_y,
-                v: cs.to_string(),
-                s: 10.0,
-                w: "bold".into(),
-                i: false,
-                a: "south".into(),
-                color: color_owned(chord_symbol_color),
-            });
+            if chord_style == Some("elegant") {
+                let (base, sup, slash) = format_elegant_chord(cs);
+                cmds.push(DrawCmd::FormattedChord {
+                    x,
+                    y: chord_base_y,
+                    base,
+                    sup,
+                    slash,
+                    s: 10.0,
+                    w: "bold".into(),
+                    i: false,
+                    a: "south".into(),
+                    color: color_owned(chord_symbol_color),
+                });
+            } else {
+                cmds.push(DrawCmd::Text {
+                    x,
+                    y: chord_base_y,
+                    v: cs.to_string(),
+                    s: 10.0,
+                    w: "bold".into(),
+                    i: false,
+                    a: "south".into(),
+                    color: color_owned(chord_symbol_color),
+                });
+            }
             above_stack_top = above_stack_top.max(chord_base_y + text_height_mm(10.0));
         }
     }
@@ -8091,4 +8275,208 @@ fn test_precedence_stack_and_uniform_chord_baseline() {
 
     // 2. System chord baseline sits above item 1's note mark layer with low_gap clearance
     assert!(y_base >= item1_stack_top + 0.55 * 1.75, "Chord baseline must sit above the note mark stack top");
+}
+
+pub fn format_elegant_chord(cs: &str) -> (String, Option<String>, Option<String>) {
+    if cs.is_empty() {
+        return (String::new(), None, None);
+    }
+
+    let (main, slash) = if let Some(slash_idx) = cs.rfind('/') {
+        if slash_idx > 0
+            && slash_idx + 1 < cs.len()
+            && cs[slash_idx + 1..].starts_with(|c: char| ('A'..='G').contains(&c))
+        {
+            let main_part = &cs[..slash_idx];
+            let raw_slash = &cs[slash_idx..];
+            let formatted_slash = raw_slash
+                .replace("##", "\u{ed63}")
+                .replace('#', "\u{ed62}")
+                .replace("bb", "\u{ed64}")
+                .replace('b', "\u{ed60}");
+            (main_part, Some(formatted_slash))
+        } else {
+            (cs, None)
+        }
+    } else {
+        (cs, None)
+    };
+
+    if main.is_empty() {
+        return (String::new(), None, slash);
+    }
+
+    let first_char = main.chars().next().unwrap();
+    if !('A'..='G').contains(&first_char) {
+        return (main.to_string(), None, slash);
+    }
+
+    let root_letter = first_char.to_string();
+    let rest = &main[first_char.len_utf8()..];
+
+    let (root_acc, rest) = if let Some(stripped) = rest.strip_prefix("##") {
+        ("\u{ed63}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix("\u{266f}\u{266f}") {
+        ("\u{ed63}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix('#') {
+        ("\u{ed62}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix('\u{266f}') {
+        ("\u{ed62}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix("bb") {
+        ("\u{ed64}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix("\u{266d}\u{266d}") {
+        ("\u{ed64}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix('b') {
+        ("\u{ed60}", stripped)
+    } else if let Some(stripped) = rest.strip_prefix('\u{266d}') {
+        ("\u{ed60}", stripped)
+    } else {
+        ("", rest)
+    };
+
+    let root = format!("{}{}", root_letter, root_acc);
+
+    if rest.is_empty() {
+        return (root, None, slash);
+    }
+
+    // 1. Minor major 7th: CmM7, Cmmaj7, Cm(maj7), CmΔ7
+    for prefix in &[
+        "mM7",
+        "mmaj7",
+        "mMaj7",
+        "m(maj7)",
+        "mΔ7",
+        "m\u{0394}7",
+        "mΔ",
+        "m\u{0394}",
+    ] {
+        if rest.starts_with(prefix) {
+            let rem = &rest[prefix.len()..];
+            let sup = if prefix.contains('7') || !rem.starts_with('7') {
+                format!("\u{0394}7{}", format_chord_accidental_tensions(rem))
+            } else {
+                format!("\u{0394}{}", format_chord_accidental_tensions(rem))
+            };
+            return (format!("{}m", root), Some(sup), slash);
+        }
+    }
+
+    // 2. Major 7th / Major extensions: maj7, Maj7, M7, Δ7, Δ
+    for prefix in &["maj7", "Maj7", "M7", "Δ7", "\u{0394}7"] {
+        if rest.starts_with(prefix) {
+            let rem = &rest[prefix.len()..];
+            return (
+                root,
+                Some(format!("\u{0394}7{}", format_chord_accidental_tensions(rem))),
+                slash,
+            );
+        }
+    }
+    for prefix in &["maj9", "Maj9", "M9", "Δ9", "\u{0394}9"] {
+        if rest.starts_with(prefix) {
+            let rem = &rest[prefix.len()..];
+            return (
+                root,
+                Some(format!("\u{0394}9{}", format_chord_accidental_tensions(rem))),
+                slash,
+            );
+        }
+    }
+    for prefix in &["maj13", "Maj13", "M13", "Δ13", "\u{0394}13"] {
+        if rest.starts_with(prefix) {
+            let rem = &rest[prefix.len()..];
+            return (
+                root,
+                Some(format!("\u{0394}13{}", format_chord_accidental_tensions(rem))),
+                slash,
+            );
+        }
+    }
+    if matches!(rest, "maj" | "Maj" | "\u{0394}") {
+        return (root, Some("\u{0394}".to_string()), slash);
+    }
+
+    // 3. Minor qualities: m, min, -
+    if rest.starts_with("min") {
+        let rem = &rest[3..];
+        let sup = if rem.is_empty() {
+            None
+        } else {
+            Some(format_chord_accidental_tensions(rem))
+        };
+        return (format!("{}min", root), sup, slash);
+    }
+    if rest.starts_with('m') && !rest.starts_with("maj") {
+        let rem = &rest[1..];
+        let sup = if rem.is_empty() {
+            None
+        } else {
+            Some(format_chord_accidental_tensions(rem))
+        };
+        return (format!("{}m", root), sup, slash);
+    }
+    if rest.starts_with('-') {
+        let rem = &rest[1..];
+        let sup = if rem.is_empty() {
+            None
+        } else {
+            Some(format_chord_accidental_tensions(rem))
+        };
+        return (format!("{}-", root), sup, slash);
+    }
+
+    // 4. Suspended, Diminished, Augmented, Numbers, Alterations
+    let sup = format_chord_accidental_tensions(rest);
+    let sup_opt = if sup.is_empty() { None } else { Some(sup) };
+    (root, sup_opt, slash)
+}
+
+fn format_chord_accidental_tensions(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '#' {
+            out.push('\u{ed62}');
+        } else if ch == 'b' {
+            let next_is_digit = i + 1 < chars.len() && chars[i + 1].is_ascii_digit();
+            let prev_is_accidental = i > 0
+                && matches!(
+                    chars[i - 1],
+                    '#' | 'b' | '\u{ed62}' | '\u{ed60}' | '\u{266f}' | '\u{266d}' | '7' | '9' | '1' | '3' | '5' | '(' | '/' | '+' | ','
+                );
+            if next_is_digit || prev_is_accidental || i == chars.len() - 1 {
+                out.push('\u{ed60}');
+            } else {
+                out.push('b');
+            }
+        } else {
+            out.push(ch);
+        }
+        i += 1;
+    }
+    out
+}
+
+#[test]
+fn test_format_elegant_chord_symbols() {
+    assert_eq!(format_elegant_chord("D7#9"), ("D".to_string(), Some("7\u{ed62}9".to_string()), None));
+    assert_eq!(
+        format_elegant_chord("D7#9/F#"),
+        ("D".to_string(), Some("7\u{ed62}9".to_string()), Some("/F\u{ed62}".to_string()))
+    );
+    assert_eq!(format_elegant_chord("F#m7"), ("F\u{ed62}m".to_string(), Some("7".to_string()), None));
+    assert_eq!(format_elegant_chord("Bb"), ("B\u{ed60}".to_string(), None, None));
+    assert_eq!(format_elegant_chord("Bbm7b5"), ("B\u{ed60}m".to_string(), Some("7\u{ed60}5".to_string()), None));
+    assert_eq!(format_elegant_chord("Csus4"), ("C".to_string(), Some("sus4".to_string()), None));
+    assert_eq!(format_elegant_chord("C7sus4"), ("C".to_string(), Some("7sus4".to_string()), None));
+    assert_eq!(format_elegant_chord("CmM7"), ("Cm".to_string(), Some("\u{0394}7".to_string()), None));
+    assert_eq!(format_elegant_chord("Cmaj7"), ("C".to_string(), Some("\u{0394}7".to_string()), None));
+    assert_eq!(format_elegant_chord("Ebmaj9"), ("E\u{ed60}".to_string(), Some("\u{0394}9".to_string()), None));
+    assert_eq!(format_elegant_chord("Am7/G"), ("Am".to_string(), Some("7".to_string()), Some("/G".to_string())));
+    assert_eq!(format_elegant_chord("C/E"), ("C".to_string(), None, Some("/E".to_string())));
+    assert_eq!(format_elegant_chord("C6/9"), ("C".to_string(), Some("6/9".to_string()), None));
+    assert_eq!(format_elegant_chord("NC"), ("NC".to_string(), None, None));
 }

@@ -39,6 +39,8 @@ Primary entry point for one or more staves.
 | `music-font-metadata` | dictionary/none | `none` | Optional metadata dictionary |
 | `width` | length/auto | `auto` | Explicit width or auto |
 | `measures-per-line` | int | `none` | Force a fixed number of measures per system |
+| `vertical-spacing` | string | `"regular"` | Layout spacing preset: `"regular"` or `"tight"` |
+| `chord-style` | string | `"plain"` | Chord symbol rendering style: `"plain"` or `"elegant"` (true sharp/flat signs, superscripted additions/tensions, triangle maj7) |
 
 Staff dictionaries support:
 
@@ -92,6 +94,8 @@ Single-staff convenience wrapper around `score()`.
 | `music-font-metadata` | dictionary/none | `none` | Optional metadata dictionary |
 | `width` | length/auto | `auto` | Width |
 | `measures-per-line` | int | `none` | Force a fixed number of measures per system |
+| `vertical-spacing` | string | `"regular"` | Layout spacing preset: `"regular"` or `"tight"` |
+| `chord-style` | string | `"plain"` | Chord symbol rendering style: `"plain"` or `"elegant"` |
 
 ## Staff Grouping
 
@@ -172,7 +176,8 @@ Examples of accepted inputs:
   - Fingerings: `n[3]`, `n_[2]`, `n[1 *3* 5]`
   - Note marks & ornaments (above / below): `q[down]`, `q[up]`, `q_[down]`, `q[ua]`, `q[da]`, `q[up-arrow]`, `q[down-arrow]`, `q[mord]`, `q[lmord]`, `q[turn]`, `q[+]`, `q[pizz]`
   - Multiple stacked note marks (space-separated): `q[up-bow mord]`, `q[harmonic snap]`, `q[down up-arrow]`
-  - Chord symbols: `[C]`, `[Am7]`, `[D/F#]`
+  - Chord symbols: `[C]`, `[Am7]`, `[D7#9/F#]`, `[Bbm7b5]`, `[CmM7]`, `[Csus4]`
+    - In `#score(chord-style: "elegant")` or `#melody(chord-style: "elegant")`: accidentals `#` and `b` in root/bass/extensions render as musical `♯` and `♭` glyphs, additions/tensions are rendered as superscripts (`D⁷♯⁹`, `F♯m⁷`, `B♭m⁷♭⁵`, `Cˢᵘˢ⁴`), and major-seventh qualities render with `Δ7`. In `"plain"` mode (default), chord symbols render as plain bold text.
   - Staff markers: `bm` (breath mark), `//` (caesura), `ds`, `coda`
 
 - **Color controls**

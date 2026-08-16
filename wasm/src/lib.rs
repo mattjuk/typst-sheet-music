@@ -219,6 +219,7 @@ fn process_score(params: &ScoreInput) -> ScoreOutput {
             &params.music_font,
             &params.tuplet_style,
             params.vertical_spacing.as_deref(),
+            &params.chord_style,
         );
         output_systems.push(sys_output);
     }
@@ -707,6 +708,7 @@ mod tests {
             note_colors: None,
             tuplet_style: "bracket".into(),
             vertical_spacing: None,
+            chord_style: "plain".into(),
         }
     }
 
