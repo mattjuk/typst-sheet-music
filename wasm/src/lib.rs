@@ -253,7 +253,7 @@ fn instrument_name_lines(name: &str) -> Vec<String> {
     if words.len() <= 1 {
         return vec![trimmed.to_string()];
     }
-    let half = (trimmed.chars().count() + 1) / 2;
+    let half = trimmed.chars().count().div_ceil(2);
     let mut first = String::new();
     let mut second = String::new();
     for word in words {
@@ -325,7 +325,7 @@ where
                     ranges.push(StaffGroupRange {
                         start,
                         end: idx,
-                        kind: kind.clone(),
+                        kind,
                     });
                 }
             }

@@ -173,9 +173,9 @@ fn inline_time_sig_width(
         let glyph_w = (time_sig_advance_sp_font(t.upper, t.lower, t.symbol.as_deref(), 1.0, font)
             - DEFAULT_TIME_SIG_PADDING)
             .max(0.0);
-        let extra = if prev.map_or(false, |p| p.is_barline()) {
+        let extra = if prev.is_some_and(|p| p.is_barline()) {
             0.18
-        } else if next.map_or(false, |n| n.is_barline()) {
+        } else if next.is_some_and(|n| n.is_barline()) {
             0.0
         } else {
             0.12
@@ -408,8 +408,8 @@ fn is_short_gap_neighbor(event: &Event) -> bool {
 fn gap_extra_space_units(gap: &Gap, prev: Option<&Event>, next: Option<&Event>) -> i32 {
     let mut amount = gap.amount;
     if amount > 0
-        && prev.map_or(false, is_short_gap_neighbor)
-        && next.map_or(false, is_short_gap_neighbor)
+        && prev.is_some_and(is_short_gap_neighbor)
+        && next.is_some_and(is_short_gap_neighbor)
     {
         amount -= 1;
     }
@@ -461,10 +461,10 @@ fn event_is_unbeamed_flagged_up_note(
         return false;
     }
 
-    let prev_is_short = prev.map_or(false, |p| {
+    let prev_is_short = prev.is_some_and(|p| {
         (p.is_note() || p.is_chord()) && !p.grace() && p.duration() >= 8
     });
-    let next_is_short = next.map_or(false, |n| {
+    let next_is_short = next.is_some_and(|n| {
         (n.is_note() || n.is_chord()) && !n.grace() && n.duration() >= 8
     });
 
@@ -537,7 +537,7 @@ fn pre_accidental_clearance(event: &Event) -> f64 {
 }
 
 fn flagged_note_accidental_extra(event: &Event, next: Option<&Event>) -> f64 {
-    if next.map_or(false, |next| {
+    if next.is_some_and(|next| {
         flagged_note_before_longer_accidental(event, next)
     }) {
         FLAGGED_NOTE_TO_ACCIDENTAL_CLEARANCE
@@ -562,8 +562,8 @@ fn accidental_readability_clearance(event: &Event, next: &Event) -> f64 {
 
 fn is_empty_measure_whole_rest(event: &Event, prev: Option<&Event>, next: Option<&Event>) -> bool {
     matches!(event, Event::Rest(r) if r.duration == 1 && r.dots == 0)
-        && prev.map_or(true, |p| p.is_barline())
-        && next.map_or(true, |n| n.is_barline())
+        && prev.is_none_or(|p| p.is_barline())
+        && next.is_none_or(|n| n.is_barline())
 }
 
 fn required_leading_accidental_space(
@@ -664,9 +664,9 @@ fn grace_body_width(
     } else {
         0.0
     };
-    let inter_note_gap = if next.map_or(false, |n| !n.grace()) {
+    let inter_note_gap = if next.is_some_and(|n| !n.grace()) {
         0.04
-    } else if prev.map_or(false, |p| p.grace()) {
+    } else if prev.is_some_and(|p| p.grace()) {
         0.08
     } else {
         0.12
@@ -712,8 +712,8 @@ pub fn event_width_font(
     match event {
         Event::Barline(_) => {
             let touches_inline_boundary = prev
-                .map_or(false, |p| matches!(p, Event::Clef(_) | Event::TimeSig(_)))
-                || next.map_or(false, |n| matches!(n, Event::Clef(_) | Event::TimeSig(_)));
+                .is_some_and(|p| matches!(p, Event::Clef(_) | Event::TimeSig(_)))
+                || next.is_some_and(|n| matches!(n, Event::Clef(_) | Event::TimeSig(_)));
             let w = if touches_inline_boundary { 0.6 } else { 2.5 };
             w + leading_accidental_extra(event, w, next, font)
         }
@@ -1366,7 +1366,7 @@ pub fn layout_staff_font(
                 let stem_scale = if c.grace { GRACE_NOTE_SCALE } else { 1.0 };
                 let stem_min = if c.grace { GRACE_STEM_MIN_LENGTH } else { 3.5 };
                 stem_y_end = Some(pitch::compute_stem_end_y(
-                    tip_y, tip_sp, &sd, stem_scale, stem_min,
+                    tip_y, tip_sp, sd, stem_scale, stem_min,
                 ));
                 stem_dir = Some(sd.to_string());
                 chord_ys = y_list;
@@ -1649,7 +1649,7 @@ pub fn align_staves_by_beat(laid_out_staves: &[LaidOutStaff]) -> Vec<LaidOutStaf
         col_xs.push(x);
         x += w;
     }
-    let total_w = if laid_out_staves.iter().all(|s| s.items.last().map_or(false, |it| it.event.is_barline())) {
+    let total_w = if laid_out_staves.iter().all(|s| s.items.last().is_some_and(|it| it.event.is_barline())) {
         col_xs.last().copied().unwrap_or(x)
     } else {
         x
