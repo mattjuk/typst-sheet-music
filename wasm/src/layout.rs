@@ -439,11 +439,6 @@ fn event_is_unbeamed_flagged_up_note(
     if dur < 8 || event.grace() {
         return false;
     }
-    if let Some(n) = next {
-        if needs_leading_accidental_space(event, n) || flagged_note_before_longer_accidental(event, n) {
-            return false;
-        }
-    }
     let (name, octave) = match event {
         Event::Note(n) => (&n.name, n.octave),
         Event::Chord(c) => {
@@ -461,14 +456,26 @@ fn event_is_unbeamed_flagged_up_note(
         return false;
     }
 
-    let prev_is_short = prev.is_some_and(|p| {
-        (p.is_note() || p.is_chord()) && !p.grace() && p.duration() >= 8
-    });
-    let next_is_short = next.is_some_and(|n| {
-        (n.is_note() || n.is_chord()) && !n.grace() && n.duration() >= 8
-    });
+    if let Some(n) = next {
+        if needs_leading_accidental_space(event, n)
+            || flagged_note_before_longer_accidental(event, n)
+        {
+            return false;
+        }
+        let next_dur = n.duration();
+        if next_dur >= 8 && !n.grace() {
+            let explicit_break = event.beam_end() || n.beam_start();
+            let prev_is_short = prev.is_some_and(|p| {
+                (p.is_note() || p.is_chord()) && !p.grace() && p.duration() >= 8
+            });
+            if explicit_break || !prev_is_short {
+                return true;
+            }
+            return false;
+        }
+    }
 
-    !prev_is_short && !next_is_short
+    true
 }
 
 fn plain_note_pair(event: &Event, next: Option<&Event>) -> bool {
@@ -2035,14 +2042,13 @@ mod tests {
 
     #[test]
     fn scalar_accidentals_do_not_reserve_left_side_space() {
+        let d = note("d", None, 8);
         let e = note("e", None, 8);
         let f_sharp = note("f", Some("sharp"), 8);
-        let scalar_width = event_width(&e, None, Some(&f_sharp));
-        let compact_width = DEFAULT_NOTE_SPACING_BASE
-            * duration_spacing_factor(8.0, 0)
-            * PLAIN_NOTE_SPACING_MULTIPLIER;
+        let scalar_width = event_width(&e, Some(&d), Some(&f_sharp));
+        let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE * duration_spacing_factor(8.0, 0);
 
-        assert_eq!(scalar_width, compact_width);
+        assert_eq!(scalar_width, scalar_eighth_width);
     }
 
     #[test]
@@ -2069,12 +2075,11 @@ mod tests {
 
     #[test]
     fn same_duration_arpeggio_accidentals_do_not_add_stem_lane_space() {
+        let d = note("d", None, 8);
         let g_eighth = note("g", None, 8);
         let b_flat_eighth = note("b", Some("flat"), 8);
-        let arpeggio_width = event_width(&g_eighth, None, Some(&b_flat_eighth));
-        let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE
-            * duration_spacing_factor(8.0, 0)
-            * PLAIN_NOTE_SPACING_MULTIPLIER;
+        let arpeggio_width = event_width(&g_eighth, Some(&d), Some(&b_flat_eighth));
+        let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE * duration_spacing_factor(8.0, 0);
 
         assert_eq!(arpeggio_width, scalar_eighth_width);
     }
@@ -2135,10 +2140,11 @@ mod tests {
 
     #[test]
     fn very_short_notes_keep_minimum_head_clearance() {
+        let c64 = note("c", None, 64);
         let e64 = note("e", None, 64);
         let d64 = note("d", None, 64);
 
-        let width = event_width(&e64, None, Some(&d64));
+        let width = event_width(&e64, Some(&c64), Some(&d64));
         let minimum = notehead_half_width(&e64, glyph::FontId::Bravura)
             + notehead_half_width(&d64, glyph::FontId::Bravura)
             + MIN_NOTEHEAD_PAIR_CLEARANCE;

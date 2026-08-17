@@ -1150,10 +1150,14 @@ impl<'a> Parser<'a> {
         while self.pos < self.len() {
             let ch = self.ch();
 
-            // Skip whitespace
-            if is_whitespace_char(ch) {
+            // Skip inline whitespace
+            if ch == b' ' || ch == b'\t' || ch == b'\r' {
                 let start = self.pos;
-                while self.pos < self.len() && is_whitespace_char(self.input[self.pos]) {
+                while self.pos < self.len()
+                    && (self.input[self.pos] == b' '
+                        || self.input[self.pos] == b'\t'
+                        || self.input[self.pos] == b'\r')
+                {
                     self.pos += 1;
                 }
                 let run_len = self.pos - start;
