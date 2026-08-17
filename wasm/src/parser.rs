@@ -3,16 +3,19 @@ use crate::types::*;
 use std::collections::BTreeMap;
 
 fn is_digit(ch: u8) -> bool {
-    ch >= b'0' && ch <= b'9'
+    ch.is_ascii_digit()
 }
+
 fn is_lower(ch: u8) -> bool {
-    ch >= b'a' && ch <= b'z'
+    ch.is_ascii_lowercase()
 }
+
 fn is_whitespace_char(ch: u8) -> bool {
-    ch == b' ' || ch == b'\t' || ch == b'\r'
+    ch.is_ascii_whitespace()    
 }
+
 fn is_word_char(ch: u8) -> bool {
-    is_lower(ch) || is_digit(ch) || ch == b'-'
+    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == b'-'
 }
 
 fn resolve_color_name(color: &str) -> &str {
@@ -111,14 +114,12 @@ fn build_note_color_map(
 ) -> NoteColorMap {
     let mut merged: NoteColorMap = BTreeMap::new();
 
-    for source in [score_note_colors, staff_note_colors] {
-        if let Some(source) = source {
-            for (note, color) in source {
-                if let Some((pitch_class, octave)) = parse_note_color_key(note, base_octave) {
-                    let thresholds = merged.entry(pitch_class).or_default();
-                    thresholds.retain(|(existing_octave, _)| *existing_octave != octave);
-                    thresholds.push((octave, resolve_color_name(color).to_string()));
-                }
+    for source in [score_note_colors, staff_note_colors].into_iter().flatten() {
+        for (note, color) in source {
+            if let Some((pitch_class, octave)) = parse_note_color_key(note, base_octave) {
+                let thresholds = merged.entry(pitch_class).or_default();
+                thresholds.retain(|(existing_octave, _)| *existing_octave != octave);
+                thresholds.push((octave, resolve_color_name(color).to_string()));
             }
         }
     }
@@ -1000,7 +1001,7 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            let is_chord_bracket = nxt.map_or(false, |c| c >= b'A' && c <= b'G');
+            let is_chord_bracket = nxt.is_some_and(|c| (b'A'..=b'G').contains(&c));
             if !is_chord_bracket {
                 att.beam_start = true;
                 att.last_color_target = EventColorTarget::Beam;
@@ -1158,8 +1159,8 @@ impl<'a> Parser<'a> {
                 let run_len = self.pos - start;
                 let next = self.next_nonspace_char(self.pos);
                 let prev_event = self.events.last();
-                let prev_is_barline = prev_event.map_or(false, |e| e.is_barline());
-                let prev_is_linebreak = prev_event.map_or(false, |e| matches!(e, Event::LineBreak));
+                let prev_is_barline = prev_event.is_some_and(|e| e.is_barline());
+                let prev_is_linebreak = prev_event.is_some_and(|e| matches!(e, Event::LineBreak));
                 if run_len > 1
                     && prev_event.is_some()
                     && !prev_is_barline
@@ -1269,7 +1270,7 @@ impl<'a> Parser<'a> {
                         self.pos += 1;
                         continue;
                     }
-                    if c >= b'a' && c <= b'g' {
+                    if (b'a'..=b'g').contains(&c) {
                         let cname = (c as char).to_string();
                         self.pos += 1;
                         let (accidental, octave, p2) = self.parse_note_pitch(self.pos);
@@ -1523,7 +1524,7 @@ impl<'a> Parser<'a> {
             }
 
             // Notes (a-g)
-            if ch >= b'a' && ch <= b'g' {
+            if (b'a'..=b'g').contains(&ch) {
                 let name = (ch as char).to_string();
                 self.pos += 1;
                 let (data, p) = self.parse_note_event_data(self.pos);

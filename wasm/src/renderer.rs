@@ -887,7 +887,7 @@ fn smufl_advance_for_codepoint(codepoint: u32, font: glyph::FontId) -> Option<f6
         0xE610 | 0xE611 => Some(1.08),
         0xE612 | 0xE613 => Some(1.056),
         0xE614 => Some(0.816),
-        0xE617 | 0xE618 | 0xE619 => Some(1.2),
+        0xE617..=0xE619 => Some(1.2),
         0xE630 => Some(0.816),
         0xE632 => Some(0.8),
         0xEB60 | 0xEB64 => Some(0.8),
@@ -1598,9 +1598,7 @@ fn chord_accidental_collision_left_edge(
     lsp: f64,
     font: glyph::FontId,
 ) -> Option<f64> {
-    let Some(acc_bb) = glyph::bbox_for(font, acc_smufl) else {
-        return None;
-    };
+    let acc_bb = glyph::bbox_for(font, acc_smufl)?;
     let note_bb = glyph::bbox_for(font, notehead_smufl);
     let acc_left = acc_x + acc_bb.sw_x * lsp;
     let acc_right = acc_x + acc_bb.ne_x * lsp;
@@ -2220,8 +2218,8 @@ fn compute_below_extent_sp(items: &[LaidOutItem]) -> f64 {
             max_sp = max_sp.max(compute_below_extent_sp(&item.voice_items));
         }
         let ev = &item.event;
-        let has_dynamic = ev.dynamic_mark().map_or(false, |d| !d.is_empty());
-        let has_expression = ev.expression_text().map_or(false, |e| !e.is_empty());
+        let has_dynamic = ev.dynamic_mark().is_some_and(|d| !d.is_empty());
+        let has_expression = ev.expression_text().is_some_and(|e| !e.is_empty());
         let has_hairpin = ev.hairpin().is_some();
         let lyric_count = ev.lyrics().iter().filter(|l| l.text.is_some()).count();
         // Dynamic glyphs normally sit at y_bottom-1 sp, but may be nudged lower
@@ -2713,7 +2711,7 @@ pub fn render_system_group(
             );
 
             let items = &ref_staff.items;
-            let last_item_is_barline = items.last().map_or(false, |i| i.event.is_barline());
+            let last_item_is_barline = items.last().is_some_and(|i| i.event.is_barline());
             let last_barline_idx: Option<usize> = if last_item_is_barline {
                 items.iter().rposition(|it| it.event.is_barline())
             } else {
@@ -2882,7 +2880,7 @@ fn instrument_name_lines(name: &str) -> Vec<String> {
     if words.len() <= 1 {
         return vec![trimmed.to_string()];
     }
-    let half = (trimmed.chars().count() + 1) / 2;
+    let half = trimmed.chars().count().div_ceil(2);
     let mut first = String::new();
     let mut second = String::new();
     for word in words {
@@ -3140,7 +3138,7 @@ fn render_system(
         let first_has_acc = items
             .iter()
             .find(|i| i.event.is_note() || i.event.is_chord())
-            .map_or(false, |i| match &i.event {
+            .is_some_and(|i| match &i.event {
                 Event::Note(n) => n.accidental.is_some(),
                 Event::Chord(c) => c.notes.iter().any(|n| n.accidental.is_some()),
                 _ => false,
@@ -3163,8 +3161,8 @@ fn render_system(
         1.0
     };
 
-    let total_width = if avail_width_mm.is_some() {
-        avail_width_mm.unwrap() / sp
+    let total_width = if let Some(avail_width_has) = avail_width_mm {
+        avail_width_has / sp
     } else {
         music_start_x / sp + total_layout_width * scale_x + 1.0
     };
@@ -3293,9 +3291,7 @@ fn render_system(
         });
         let stem_dir = if let Some(dir) = forced_stem_dir {
             dir
-        } else if group_is_grace {
-            "up"
-        } else if avg_staff_pos > 4.0 {
+        } else if group_is_grace || (avg_staff_pos > 4.0) {
             "up"
         } else {
             "down"
@@ -4765,8 +4761,8 @@ fn render_dynamic(
         // music-font text element so the font handles kerning/ligatures (e.g. "mf", "mp").
         let dyn_str: String = dynamic
             .chars()
-            .filter_map(|ch| dynamic_codepoint(ch))
-            .filter_map(|cp| char::from_u32(cp))
+            .filter_map(dynamic_codepoint)
+            .filter_map(char::from_u32)
             .collect();
         if !dyn_str.is_empty() {
             cmds.push(DrawCmd::MusicText {
@@ -5986,7 +5982,7 @@ fn compute_system_chord_baseline(
     let mut system_chord_y = y_top + min_base;
 
     for (idx, item) in items.iter().enumerate() {
-        if item.event.chord_symbol().map_or(true, |cs| cs.is_empty()) {
+        if item.event.chord_symbol().is_none_or(|cs| cs.is_empty()) {
             continue;
         }
         let stack_top = compute_item_above_stack_top(
@@ -6292,17 +6288,17 @@ fn below_item_content_bottom(
 }
 
 fn inline_clef_draw_offset(prev: Option<&Event>, next: Option<&Event>, sp: f64) -> f64 {
-    let prev_is_music = prev.map_or(false, |p| {
+    let prev_is_music = prev.is_some_and(|p| {
         p.is_note() || p.is_chord() || p.is_rest() || matches!(p, Event::Spacer(_))
     });
-    let next_is_music = next.map_or(false, |n| {
+    let next_is_music = next.is_some_and(|n| {
         n.is_note() || n.is_chord() || n.is_rest() || matches!(n, Event::Spacer(_))
     });
     if !prev_is_music || !next_is_music {
         return 0.0;
     }
     let base_shift = 0.5 * CLEF_PADDING * sp;
-    let next_has_acc = next.map_or(false, |n| match n {
+    let next_has_acc = next.is_some_and(|n| match n {
         Event::Note(note) => note.accidental.is_some(),
         Event::Chord(c) => c.notes.iter().any(|n| n.accidental.is_some()),
         _ => false,
@@ -6537,7 +6533,7 @@ fn render_inline_text(
     if let Some(et) = ev.expression_text() {
         if !et.is_empty() {
             let exp_font_size = 8.75 * (sp / 1.75);
-            let has_dynamic = ev.dynamic_mark().map_or(false, |d| !d.is_empty());
+            let has_dynamic = ev.dynamic_mark().is_some_and(|d| !d.is_empty());
             let default_exp_y = if has_dynamic {
                 y_bottom - 3.5 * sp
             } else {
@@ -8178,7 +8174,7 @@ fn render_lyrics(
         if let Some(et) = ev.expression_text() {
             if !et.is_empty() {
                 let exp_font_size = 8.75 * (sp / 1.75);
-                let has_dynamic = ev.dynamic_mark().map_or(false, |d| !d.is_empty());
+                let has_dynamic = ev.dynamic_mark().is_some_and(|d| !d.is_empty());
                 let default_exp_y = if has_dynamic {
                     y_bottom - 3.5 * sp
                 } else {
@@ -8280,7 +8276,7 @@ fn render_lyrics(
             if let Some(et) = ev.expression_text() {
                 if !et.is_empty() {
                     let exp_font_size = 8.75 * (sp / 1.75);
-                    let has_dynamic = ev.dynamic_mark().map_or(false, |d| !d.is_empty());
+                    let has_dynamic = ev.dynamic_mark().is_some_and(|d| !d.is_empty());
                     let default_exp_y = if has_dynamic {
                         y_bottom - 3.5 * sp
                     } else {
