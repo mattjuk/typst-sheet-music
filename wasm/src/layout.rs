@@ -429,11 +429,13 @@ fn needs_leading_accidental_space(event: &Event, next: &Event) -> bool {
 }
 
 const UNBEAMED_FLAG_TAIL_CLEARANCE: f64 = 0.65;
+const UNBEAMED_FLAG_DOWN_TAIL_CLEARANCE: f64 = 0.25;
 
-fn event_is_unbeamed_flagged_up_note(
+fn event_is_unbeamed_flagged_note_dir(
     event: &Event,
     prev: Option<&Event>,
     next: Option<&Event>,
+    target_dir: &str,
 ) -> bool {
     let dur = event.duration();
     if dur < 8 || event.grace() {
@@ -452,7 +454,7 @@ fn event_is_unbeamed_flagged_up_note(
 
     let sp = pitch::staff_position(name, octave, "treble");
     let stem_dir = pitch::auto_stem_direction(sp);
-    if stem_dir != "up" {
+    if stem_dir != target_dir {
         return false;
     }
 
@@ -476,6 +478,22 @@ fn event_is_unbeamed_flagged_up_note(
     }
 
     true
+}
+
+fn event_is_unbeamed_flagged_up_note(
+    event: &Event,
+    prev: Option<&Event>,
+    next: Option<&Event>,
+) -> bool {
+    event_is_unbeamed_flagged_note_dir(event, prev, next, "up")
+}
+
+fn event_is_unbeamed_flagged_down_note(
+    event: &Event,
+    prev: Option<&Event>,
+    next: Option<&Event>,
+) -> bool {
+    event_is_unbeamed_flagged_note_dir(event, prev, next, "down")
 }
 
 fn plain_note_pair(event: &Event, next: Option<&Event>) -> bool {
@@ -755,6 +773,8 @@ pub fn event_width_font(
             }
             if event_is_unbeamed_flagged_up_note(event, prev, next) {
                 w += UNBEAMED_FLAG_TAIL_CLEARANCE;
+            } else if event_is_unbeamed_flagged_down_note(event, prev, next) {
+                w += UNBEAMED_FLAG_DOWN_TAIL_CLEARANCE;
             }
             w = w.max(minimum_note_pair_spacing(event, next, font));
             w + leading_accidental_extra(event, w, next, font)
@@ -2092,6 +2112,16 @@ mod tests {
         let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE * duration_spacing_factor(8.0, 0);
 
         assert!(isolated_e_width > scalar_eighth_width);
+    }
+
+    #[test]
+    fn unbeamed_flagged_down_notes_leave_tail_clearance() {
+        let c_high_eighth = note("c'", None, 8);
+        let g_quarter = note("g", None, 4);
+        let isolated_c_width = event_width(&c_high_eighth, None, Some(&g_quarter));
+        let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE * duration_spacing_factor(8.0, 0);
+
+        assert!(isolated_c_width > scalar_eighth_width);
     }
 
     #[test]
