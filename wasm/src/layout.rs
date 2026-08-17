@@ -428,7 +428,7 @@ fn needs_leading_accidental_space(event: &Event, next: &Event) -> bool {
     }
 }
 
-const UNBEAMED_FLAG_TAIL_CLEARANCE: f64 = 0.45;
+const UNBEAMED_FLAG_TAIL_CLEARANCE: f64 = 0.65;
 
 fn event_is_unbeamed_flagged_up_note(
     event: &Event,
