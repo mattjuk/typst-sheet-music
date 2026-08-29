@@ -8531,6 +8531,10 @@ pub fn format_elegant_single_chord(cs: &str) -> (String, Option<String>, Option<
         return (String::new(), None, None);
     }
 
+    if cs.eq_ignore_ascii_case("nc") {
+        return ("N.C.".to_string(), None, None);
+    }
+
     let (main, slash) = if let Some(slash_idx) = cs.rfind('/') {
         if slash_idx > 0
             && slash_idx + 1 < cs.len()
@@ -8730,7 +8734,8 @@ fn test_format_elegant_chord_symbols() {
     );
     assert_eq!(format_elegant_chord("C/E"), vec![("C/E".to_string(), None)]);
     assert_eq!(format_elegant_chord("C6/9"), vec![("C".to_string(), Some("6/9".to_string()))]);
-    assert_eq!(format_elegant_chord("NC"), vec![("NC".to_string(), None)]);
+    assert_eq!(format_elegant_chord("NC"), vec![("N.C.".to_string(), None)]);
+    assert_eq!(format_elegant_chord("nc"), vec![("N.C.".to_string(), None)]);
     assert_eq!(
         format_elegant_chord("A7 (D7)"),
         vec![("A".to_string(), Some("7".to_string())), (" (D".to_string(), Some("7".to_string())), (")".to_string(), None)]
