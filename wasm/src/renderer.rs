@@ -1094,8 +1094,9 @@ fn svg_from_cmds(
             DrawCmd::Text { x, y, v, s, .. } => {
                 let size_mm = *s * 25.4 / 72.0;
                 let pad_x = size_mm * 0.65 * v.chars().count().max(1) as f64;
-                update_bounds(&mut bounds, ox + x - pad_x, oy + y - size_mm);
-                update_bounds(&mut bounds, ox + x + pad_x, oy + y + size_mm);
+                let pad_y = size_mm * 0.45;
+                update_bounds(&mut bounds, ox + x - pad_x, oy + y - pad_y);
+                update_bounds(&mut bounds, ox + x + pad_x, oy + y + pad_y);
             }
             DrawCmd::FormattedChord {
                 x,
