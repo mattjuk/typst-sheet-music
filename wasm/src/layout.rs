@@ -467,10 +467,18 @@ fn event_is_unbeamed_flagged_note_dir(
         let next_dur = n.duration();
         if next_dur >= 8 && !n.grace() {
             let explicit_break = event.beam_end() || n.beam_start();
+            let same_tuplet =
+                event.tuplet_beats() > 0.0 && n.tuplet_beats() > 0.0 && !event.tuplet_end();
+            if explicit_break {
+                return true;
+            }
+            if same_tuplet {
+                return false;
+            }
             let prev_is_short = prev.is_some_and(|p| {
                 (p.is_note() || p.is_chord()) && !p.grace() && p.duration() >= 8
             });
-            if explicit_break || !prev_is_short {
+            if !prev_is_short {
                 return true;
             }
             return false;
@@ -767,8 +775,7 @@ pub fn event_width_font(
 
             if let Some(scale) = tuplet_duration_scale(event) {
                 w *= scale;
-            }
-            if plain_note_pair(event, next) {
+            } else if plain_note_pair(event, next) {
                 w *= PLAIN_NOTE_SPACING_MULTIPLIER;
             }
             if event_is_unbeamed_flagged_up_note(event, prev, next) {
@@ -2122,6 +2129,19 @@ mod tests {
         let scalar_eighth_width = DEFAULT_NOTE_SPACING_BASE * duration_spacing_factor(8.0, 0);
 
         assert!(isolated_c_width > scalar_eighth_width);
+    }
+
+    #[test]
+    fn triplet_notes_have_equal_spacing() {
+        let music = "{2,3:a8bc'}";
+        let events = crate::parser::parse_music(music, 4);
+        let font = glyph::FontId::Bravura;
+        let laid_out = layout_staff_font(&events, Some("treble"), None, false, &[], font);
+        let xs: Vec<f64> = laid_out.items.iter().map(|i| i.x).collect();
+        assert_eq!(xs.len(), 3);
+        let dx1 = xs[1] - xs[0];
+        let dx2 = xs[2] - xs[1];
+        assert!((dx1 - dx2).abs() < 1e-4);
     }
 
     #[test]

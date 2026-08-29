@@ -4312,6 +4312,7 @@ fn render_system(
         sp,
         font,
         tuplet_style,
+        &raw_beam_groups,
     );
 
     // ── Hairpins ──
@@ -6733,6 +6734,7 @@ fn render_tuplets(
     sp: f64,
     font: glyph::FontId,
     tuplet_style: &str,
+    raw_beam_groups: &[Vec<usize>],
 ) {
     // Find tuplet groups
     let mut tuplet_groups: Vec<(Vec<usize>, i32)> = Vec::with_capacity(items.len() / 3);
@@ -6758,12 +6760,26 @@ fn render_tuplets(
 
     let tuplet_font_size = 12.5 * (sp / 1.75);
     let normalized_tuplet_style = tuplet_style.trim().to_ascii_lowercase();
-    let draw_bracket = normalized_tuplet_style != "number";
 
     for (indices, tn) in &tuplet_groups {
         if indices.is_empty() {
             continue;
         }
+
+        let is_fully_beamed = indices.len() >= 2
+            && indices.iter().all(|&idx| {
+                let ev = &items[idx].event;
+                (ev.is_note() || ev.is_chord()) && ev.duration() >= 8
+            })
+            && raw_beam_groups
+                .iter()
+                .any(|bg| indices.iter().all(|idx| bg.contains(idx)));
+
+        let draw_bracket = match normalized_tuplet_style.as_str() {
+            "number" | "none" => false,
+            "force-bracket" | "always-bracket" => true,
+            _ => !is_fully_beamed,
+        };
 
         // Determine stem direction
         let stem_ref: Vec<usize> = indices
