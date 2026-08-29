@@ -400,6 +400,36 @@ impl<'a> Parser<'a> {
         (value, p)
     }
 
+    fn is_chord_bracket_at(&self, p: usize) -> bool {
+        if self.peek(p) != Some(b'[') {
+            return false;
+        }
+        let mut i = p + 1;
+        while i < self.len() && self.input[i] != b']' && self.input[i] != b'\n' {
+            i += 1;
+        }
+        if i < self.len() && self.input[i] == b']' {
+            let content = String::from_utf8_lossy(&self.input[p + 1..i]);
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
+                return false;
+            }
+            if trimmed.eq_ignore_ascii_case("nc") || trimmed.eq_ignore_ascii_case("n.c.") {
+                return true;
+            }
+            if let Some(first) = trimmed.chars().next() {
+                if ('A'..='G').contains(&first)
+                    || ('a'..='g').contains(&first)
+                    || ('0'..='9').contains(&first)
+                    || first == '('
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn read_voice_group(&self, mut p: usize) -> Option<(String, String, usize)> {
         if self.peek(p) != Some(b'{') {
             return None;
@@ -996,13 +1026,7 @@ impl<'a> Parser<'a> {
 
         // Beam start/end
         if self.peek(p) == Some(b'[') {
-            let nxt = if p + 1 < self.len() {
-                Some(self.input[p + 1])
-            } else {
-                None
-            };
-            let is_chord_bracket = nxt.is_some_and(|c| (b'A'..=b'G').contains(&c));
-            if !is_chord_bracket {
+            if !self.is_chord_bracket_at(p) {
                 att.beam_start = true;
                 att.last_color_target = EventColorTarget::Beam;
                 p += 1;
@@ -2497,6 +2521,23 @@ mod tests {
         assert_eq!(
             kinds,
             vec!["up-arrow", "down-arrow", "mordent", "lower-mordent", "turn"]
+        );
+    }
+
+    #[test]
+    fn parses_nc_chord_symbols_without_extra_notes() {
+        let events = parse_music("c4[D] d4[NC] e4[nc] f4", 4);
+        assert_eq!(events.len(), 4, "Must parse exactly 4 notes, without creating fake notes from NC");
+        let chord_symbols: Vec<_> = events
+            .iter()
+            .map(|ev| match ev {
+                Event::Note(n) => n.chord_symbol.clone(),
+                other => panic!("expected note, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            chord_symbols,
+            vec![Some("D".to_string()), Some("NC".to_string()), Some("nc".to_string()), None]
         );
     }
 }
