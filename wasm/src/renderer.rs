@@ -2721,12 +2721,15 @@ pub fn render_system_group(
             } else {
                 None
             };
+            let show_opening_time = laid_out_staves.first().map_or(show_time, |s| s.show_time_prefix || show_time);
             for (idx, item) in items.iter().enumerate() {
                 if let Event::Barline(b) = &item.event {
                     if Some(idx) == last_barline_idx {
                         continue;
                     }
-                    let bx = shared_music_start_x + item.x * scale_x * sp_unit + 0.5 * sp_unit;
+                    let is_first_barline = idx == 0 || (idx == 1 && matches!(items[0].event, Event::Gap(_)));
+                    let shift = if is_first_barline && show_opening_time { 1.50 * sp_unit } else { 0.0 };
+                    let bx = shared_music_start_x + item.x * scale_x * sp_unit + 0.5 * sp_unit - shift;
                     render_spanning_barline(
                         &mut cmds,
                         bx,
@@ -3605,9 +3608,11 @@ fn render_system(
             }
             Event::Barline(b) => {
                 if !skip_barlines && i < items.len() - 1 {
+                    let is_first_barline = i == 0 || (i == 1 && matches!(items[0].event, Event::Gap(_)));
+                    let shift = if is_first_barline && show_opening_time { 1.50 * sp } else { 0.0 };
                     render_barline(
                         cmds,
-                        x + 0.5 * sp,
+                        x + 0.5 * sp - shift,
                         y_top,
                         y_bottom,
                         &b.style,
