@@ -886,14 +886,50 @@ pub fn compute_event_positions(events: &[Event]) -> Vec<PosInfo> {
 }
 
 pub fn compute_event_positions_font(events: &[Event], font: glyph::FontId) -> Vec<PosInfo> {
-    let mut positions = Vec::with_capacity(events.len());
+    let mut positions = vec![PosInfo { x: 0.0, width: 0.0 }; events.len()];
     let mut x = SYSTEM_START_CONTENT_PADDING;
-    for (i, event) in events.iter().enumerate() {
+    let mut i = 0;
+    while i < events.len() {
         let prev = if i > 0 { Some(&events[i - 1]) } else { None };
         let next = events.get(i + 1);
-        let w = event_width_font(event, prev, next, font);
-        positions.push(PosInfo { x, width: w });
-        x += w;
+        let w = event_width_font(&events[i], prev, next, font);
+        positions[i] = PosInfo { x, width: w };
+
+        // Check if following events are a run of grace notes
+        let mut grace_end = i + 1;
+        while grace_end < events.len() && events[grace_end].grace() {
+            grace_end += 1;
+        }
+
+        if grace_end > i + 1 {
+            // events[i+1..grace_end] are grace notes preceding principal event events[grace_end]
+            let x_principal = x + w;
+            let mut grace_widths = Vec::with_capacity(grace_end - (i + 1));
+            let mut total_grace_w = 0.0;
+            for k in (i + 1)..grace_end {
+                let g_prev = if k > 0 { Some(&events[k - 1]) } else { None };
+                let g_next = events.get(k + 1);
+                let gw = event_width_font(&events[k], g_prev, g_next, font);
+                grace_widths.push(gw);
+                total_grace_w += gw;
+            }
+
+            let mut cur_grace_x = (x_principal - total_grace_w).max(x + 0.6);
+            for k in (i + 1)..grace_end {
+                let gw = grace_widths[k - (i + 1)];
+                positions[k] = PosInfo { x: cur_grace_x, width: gw };
+                cur_grace_x += gw;
+            }
+            x = x_principal;
+            i = grace_end;
+        } else if events[i].grace() {
+            // Grace note at system start or without preceding non-grace event
+            x += w;
+            i += 1;
+        } else {
+            x += w;
+            i += 1;
+        }
     }
     positions
 }
