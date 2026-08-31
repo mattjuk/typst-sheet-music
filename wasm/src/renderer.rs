@@ -2067,6 +2067,9 @@ fn finalize_raw_beam_group(raw_beam_groups: &mut Vec<Vec<usize>>, cur_beam: &mut
 }
 
 fn event_duration_beats(event: &Event) -> f64 {
+    if event.grace() {
+        return 0.0;
+    }
     let dur = event.duration();
     if dur <= 0 {
         return 0.0;
@@ -5289,6 +5292,12 @@ mod beam_tests {
         Event::Note(note)
     }
 
+    fn quarter_note(name: &str) -> Event {
+        let mut note = Note::new(name, 4);
+        note.duration = 4;
+        Event::Note(note)
+    }
+
     #[test]
     fn repeated_spaces_split_beam_groups() {
         let items = vec![
@@ -5348,6 +5357,27 @@ mod beam_tests {
         assert_eq!(
             collect_raw_beam_groups(&items, Some(&time_6_8)),
             vec![vec![0, 1, 2], vec![3, 4, 5]]
+        );
+    }
+
+    #[test]
+    fn grace_notes_do_not_shift_auto_beaming_beat_boundaries() {
+        let mut grace_item = laid_out_item(eighth_note("a"));
+        if let Event::Note(n) = &mut grace_item.event {
+            n.grace = true;
+        }
+        let items = vec![
+            laid_out_item(quarter_note("a")),
+            grace_item,
+            laid_out_item(eighth_note("a")),
+            laid_out_item(eighth_note("g")),
+            laid_out_item(eighth_note("a")),
+            laid_out_item(eighth_note("g")),
+        ];
+        let time_6_8 = TimeInfo { upper: 6, lower: 8, symbol: None };
+        assert_eq!(
+            collect_raw_beam_groups(&items, Some(&time_6_8)),
+            vec![vec![3, 4, 5]]
         );
     }
 
